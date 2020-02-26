@@ -369,17 +369,23 @@ fn Keccak_256_0() -> (Vec<bool>,Vec<u64>) {
     // P = P xor (0x00 || … || 0x00 || 0x80)
     let mut P_append = vec![false; 1600];
     //0x0600 ... 0080
-    P_append[5] = true;
-    P_append[6] = true;
-    P_append[1080] = true;
+    // P_append[5] = true;
+    // P_append[6] = true;
+    // P_append[1080] = true;
+    P_append[61] = true;
+    P_append[62] = true;
+    P_append[1024] = true;
+
 
     // # Initialization
     // S[x,y] = 0,                               for (x,y) in (0…4,0…4)
     let mut S = vec![false; 1600];
 
     let mut a = [0u64; 25];
-    a[0] = 0x0600000000000000u64;
-    a[16] = 0x80u64;
+    // a[0] = 0x0600000000000000u64;
+    // a[16] = 0x80u64;
+    a[0] = 0x06u64;
+    a[16] = 0x8000000000000000u64;
 
     // # Absorbing phase
     // for each block Pi in P
@@ -466,16 +472,20 @@ mod test {
 
         let (hash_vector, a) = super::Keccak_256_0();
 
+        //Convert from little-endian
         let mut hash = [0u8; 32];
         for bit in 0..256 {
             if hash_vector[bit] {
-                let byte = bit / 8;
+                let byte_be = bit / 8;
+                let word = bit / 64;
+                let word_byte_le = 7 - (byte_be % 8);
+                let byte_le = (word * 8) + word_byte_le;
                 let byte_bit = 7 - (bit % 8);
-                hash[byte] = hash[byte] | (1u8 << byte_bit);
+                hash[byte_le] = hash[byte_le] | (1u8 << byte_bit);
             }
         }
 
-        panic!("hash: {:?}    a: {:?}", hash, a);
+        assert_eq!(BigUint::from_bytes_be(&hash), BigUint::from_str("75988164966894747974200307809782762084705920897667750218208675113520516842314").unwrap());
     }
 
     #[ignore]
