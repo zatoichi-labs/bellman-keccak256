@@ -171,21 +171,22 @@ fn Round_1600(A: &Vec<bool>, RC: u64) -> Vec<bool> {
             C[(x * 64usize) + bit] = A[(x * 64usize) + bit + (0usize * 320usize)] ^ A[(x * 64usize) + bit + (1usize * 320usize)] ^ A[(x * 64usize) + bit + (2usize * 320usize)] ^ A[(x * 64usize) + bit + (3usize * 320usize)] ^ A[(x * 64usize) + bit + (4usize * 320usize)];
         }
     }
-    // D[x] = C[x-1] xor rot(C[x+1],1),                             for x in 0…4
-    let mut D = vec![false; 320];
-    for x in 0..5 {
-        for bit in 0..64 {
-            //x-1 == (x+4)%5
-            //bit-1 == (bit+63)%64
-            D[(x * 64usize) + bit] = C[(((x + 4usize) % 5usize) * 64usize) + bit] ^ C[(((x + 1usize) % 5usize) * 64usize) + ((bit + 1usize) % 64)];
-        }
-    }
+    // // D[x] = C[x-1] xor rot(C[x+1],1),                             for x in 0…4
+    // let mut D = vec![false; 320];
+    // for x in 0..5 {
+    //     for bit in 0..64 {
+    //         //x-1 == (x+4)%5
+    //         //bit-1 == (bit+63)%64
+    //         D[(x * 64usize) + bit] = C[(((x + 4usize) % 5usize) * 64usize) + bit] ^ C[(((x + 1usize) % 5usize) * 64usize) + ((bit + 1usize) % 64)];
+    //     }
+    // }
     // A[x,y] = A[x,y] xor D[x],                           for (x,y) in (0…4,0…4)
     let mut A_new1 = vec![false; 1600];
     for x in 0..5 {
         for y in 0..5 {
             for bit in 0..64 {
-                A_new1[(y * 320usize) + (x * 64usize) + bit] = A[(y * 320usize) + (x * 64usize) + bit] ^ D[(x * 64usize) + bit];
+                // A_new1[(y * 320usize) + (x * 64usize) + bit] = A[(y * 320usize) + (x * 64usize) + bit] ^ D[(x * 64usize) + bit];
+                A_new1[(y * 320usize) + (x * 64usize) + bit] = A[(y * 320usize) + (x * 64usize) + bit] ^ (C[(((x + 4usize) % 5usize) * 64usize) + bit] ^ C[(((x + 1usize) % 5usize) * 64usize) + ((bit + 1usize) % 64)]);
             }
         }
     }
@@ -240,14 +241,13 @@ fn Keccak_256_512(Mbytes: &Vec<bool>) -> Vec<bool> {
     // P = Mbytes || d || 0x00 || … || 0x00
     // P = P xor (0x00 || … || 0x00 || 0x80)
     //0x0600 ... 0080
-
-    // # Initialization
-    // S[x,y] = 0,                               for (x,y) in (0…4,0…4)
     let mut P_append = vec![false; 1088];//1600-512
     P_append[61] = true;
     P_append[62] = true;
     P_append[1024 - 512] = true;
 
+    // # Initialization
+    // S[x,y] = 0,                               for (x,y) in (0…4,0…4)
     let mut S = Mbytes.clone();
     S.append(&mut P_append);
 
@@ -255,9 +255,6 @@ fn Keccak_256_512(Mbytes: &Vec<bool>) -> Vec<bool> {
     // for each block Pi in P
     //   S[x,y] = S[x,y] xor Pi[x+5*y],          for (x,y) such that x+5*y < r/w
     //   S = Keccak-f[r+c](S)
-    // S[61] = S[61] ^ true;
-    // S[62] = S[62] ^ true;
-    // S[1024] = S[1024] ^ true;
 
     S = keccak_f_1600(S);
 
@@ -275,51 +272,51 @@ fn Keccak_256_512(Mbytes: &Vec<bool>) -> Vec<bool> {
     return Z;
 }
 
-fn Keccak_256_0() -> Vec<bool> {
-    // # Padding
-    // d = 2^|Mbits| + sum for i=0..|Mbits|-1 of 2^i*Mbits[i]
-    // P = Mbytes || d || 0x00 || … || 0x00
-    // P = P xor (0x00 || … || 0x00 || 0x80)
-    let mut P_append = vec![false; 1600];
-    //0x0600 ... 0080
-    // P_append[5] = true;
-    // P_append[6] = true;
-    // P_append[1080] = true;
-    P_append[61] = true;
-    P_append[62] = true;
-    P_append[1024] = true;
+// fn Keccak_256_0() -> Vec<bool> {
+//     // # Padding
+//     // d = 2^|Mbits| + sum for i=0..|Mbits|-1 of 2^i*Mbits[i]
+//     // P = Mbytes || d || 0x00 || … || 0x00
+//     // P = P xor (0x00 || … || 0x00 || 0x80)
+//     let mut P_append = vec![false; 1600];
+//     //0x0600 ... 0080
+//     // P_append[5] = true;
+//     // P_append[6] = true;
+//     // P_append[1080] = true;
+//     P_append[61] = true;
+//     P_append[62] = true;
+//     P_append[1024] = true;
 
 
-    // # Initialization
-    // S[x,y] = 0,                               for (x,y) in (0…4,0…4)
-    let mut S = vec![false; 1600];
+//     // # Initialization
+//     // S[x,y] = 0,                               for (x,y) in (0…4,0…4)
+//     let mut S = vec![false; 1600];
 
-    // # Absorbing phase
-    // for each block Pi in P
-    //   S[x,y] = S[x,y] xor Pi[x+5*y],          for (x,y) such that x+5*y < r/w
-    //   S = Keccak-f[r+c](S)
-    for x in 0..5 {
-        for y in 0..5 {
-            for bit in 0..64 {
-                S[(y * 320usize) + (x * 64usize) + bit] = S[(y * 320usize) + (x * 64usize) + bit] ^ P_append[(y * 320usize) + (x * 64usize) + bit];
-            }
-        }
-    }
-    S = keccak_f_1600(S);
+//     // # Absorbing phase
+//     // for each block Pi in P
+//     //   S[x,y] = S[x,y] xor Pi[x+5*y],          for (x,y) such that x+5*y < r/w
+//     //   S = Keccak-f[r+c](S)
+//     for x in 0..5 {
+//         for y in 0..5 {
+//             for bit in 0..64 {
+//                 S[(y * 320usize) + (x * 64usize) + bit] = S[(y * 320usize) + (x * 64usize) + bit] ^ P_append[(y * 320usize) + (x * 64usize) + bit];
+//             }
+//         }
+//     }
+//     S = keccak_f_1600(S);
 
-    // # Squeezing phase
-    // Z = empty string
-    let mut Z = vec![false; 256];
+//     // # Squeezing phase
+//     // Z = empty string
+//     let mut Z = vec![false; 256];
 
-    // while output is requested
-    //   Z = Z || S[x,y],                        for (x,y) such that x+5*y < r/w
-    //   S = Keccak-f[r+c](S)
-    for bit in 0..256 {
-        Z[bit] = S[bit];
-    }
+//     // while output is requested
+//     //   Z = Z || S[x,y],                        for (x,y) such that x+5*y < r/w
+//     //   S = Keccak-f[r+c](S)
+//     for bit in 0..256 {
+//         Z[bit] = S[bit];
+//     }
 
-    return Z;
-}
+//     return Z;
+// }
 
 //Circuit & gadget
 impl<E: Engine> Circuit<E> for Sha3_256Gadget {
@@ -358,47 +355,44 @@ mod test {
     use tiny_keccak::Sha3;
     use tiny_keccak::Hasher;
 
-    #[test]
-    fn test_Keccak_256_0() {
-        let mut hash_sha3 = [0u8; 32];
+    // #[test]
+    // fn test_Keccak_256_0() {
+    //     let mut hash_sha3 = [0u8; 32];
 
-        let sha3 = Sha3::v256();
+    //     let sha3 = Sha3::v256();
 
-        sha3.finalize(&mut hash_sha3);
+    //     sha3.finalize(&mut hash_sha3);
 
-        //0xa7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a
-        assert_eq!(BigUint::from_bytes_be(&hash_sha3), BigUint::from_str("75988164966894747974200307809782762084705920897667750218208675113520516842314").unwrap());
+    //     //0xa7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a
+    //     assert_eq!(BigUint::from_bytes_be(&hash_sha3), BigUint::from_str("75988164966894747974200307809782762084705920897667750218208675113520516842314").unwrap());
 
-        let hash_vector = super::Keccak_256_0();
+    //     let hash_vector = super::Keccak_256_0();
 
-        //Convert from little-endian
-        let mut hash = [0u8; 32];
-        for bit in 0..256 {
-            if hash_vector[bit] {
-                let byte_be = bit / 8;
-                let word = bit / 64;
-                let word_byte_le = 7 - (byte_be % 8);
-                let byte_le = (word * 8) + word_byte_le;
-                let byte_bit = 7 - (bit % 8);
-                hash[byte_le] = hash[byte_le] | (1u8 << byte_bit);
-            }
-        }
+    //     //Convert from little-endian
+    //     let mut hash = [0u8; 32];
+    //     for bit in 0..256 {
+    //         if hash_vector[bit] {
+    //             let byte_be = bit / 8;
+    //             let word = bit / 64;
+    //             let word_byte_le = 7 - (byte_be % 8);
+    //             let byte_le = (word * 8) + word_byte_le;
+    //             let byte_bit = 7 - (bit % 8);
+    //             hash[byte_le] = hash[byte_le] | (1u8 << byte_bit);
+    //         }
+    //     }
 
-        assert_eq!(BigUint::from_bytes_be(&hash), BigUint::from_str("75988164966894747974200307809782762084705920897667750218208675113520516842314").unwrap());
-    }
+    //     assert_eq!(BigUint::from_bytes_be(&hash), BigUint::from_str("75988164966894747974200307809782762084705920897667750218208675113520516842314").unwrap());
+    // }
 
     #[test]
     fn test_Keccak_256_512() {
         let mut rng = rand::thread_rng();
-        for _ in 0..1 {
+        for _ in 0..256 {
             // let mut keccak = Keccak::v256();
             let mut sha3 = Sha3::v256();
 
             let mut rand_value = [0u8; 64];
             rng.fill(&mut rand_value);                    // array fill
-            // rand_value[0] = 255u8;
-            // rand_value[0] = 125u8;
-            // rand_value[63] = 255u8;
 
             // keccak.update(&rand_value);
             sha3.update(&rand_value);
