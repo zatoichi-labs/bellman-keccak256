@@ -150,20 +150,18 @@ impl AsRef<[u8]> for Proof {
 }
 
 //Process
-fn keccak_f_1600(input: Vec<bool>, a: &mut [u64; 25]) -> Vec<bool> {
+fn keccak_f_1600(input: Vec<bool>) -> Vec<bool> {
     let mut A = input;
 
     for i in 0..24 {
-        A = Round_1600(&A, a, ROUND_CONSTANTS[i]);
+        A = Round_1600(&A, ROUND_CONSTANTS[i]);
     }
 
     return A;
 }
 
-fn Round_1600(A: &Vec<bool>, a: &mut [u64; 25], RC: u64) -> Vec<bool> {
+fn Round_1600(A: &Vec<bool>, RC: u64) -> Vec<bool> {
     assert_eq!(A.len(), 1600);//64*25
-
-    let mut array: [u64; 5] = [0; 5];
 
     // # θ step
     // C[x] = A[x,0] xor A[x,1] xor A[x,2] xor A[x,3] xor A[x,4],   for x in 0…4
@@ -192,38 +190,8 @@ fn Round_1600(A: &Vec<bool>, a: &mut [u64; 25], RC: u64) -> Vec<bool> {
         }
     }
 
-    // Theta
-    for x in 0..5 {
-        for y_count in 0..5 {
-            let y = y_count * 5;
-            array[x] ^= a[x + y];
-        }
-    }
-    for x in 0..5 {
-        for y_count in 0..5 {
-            let y = y_count * 5;
-            a[y + x] ^= array[(x + 4) % 5] ^ array[(x + 1) % 5].rotate_left(1);
-        }
-    }
-    //Compare
-    for i in 0..25 {
-        for bit in 0..64 {
-            let val = 1u64 << (63usize - bit);
-            let a_set = a[i] & val != 0u64;
-            assert_eq!(A_new1[(i * 64usize) + bit], a_set);
-        }
-    }
-
     // # ρ and π steps
     // B[y,2*x+3*y] = rot(A[x,y], r[x,y]),                 for (x,y) in (0…4,0…4)
-    // let mut B = vec![false; 1600];
-    // for x in 0..5 {
-    //     for y in 0..5 {
-    //         for bit in 0..64 {
-    //             B[((((2usize * x) + (3usize * y)) % 5) * 320usize) + (y * 64usize) + bit] = A_new1[(y * 320usize) + (x * 64usize) + ((ROTR[(y * 5usize) + x] + bit) % 64usize)];
-    //         }
-    //     }
-    // }
     let mut B = vec![false; 1600];
     for bit in 0..64 {//Since PI[] doesn't contain 0
         B[bit] = A_new1[bit];
@@ -236,22 +204,6 @@ fn Round_1600(A: &Vec<bool>, a: &mut [u64; 25], RC: u64) -> Vec<bool> {
         last = PI[i];
     }
 
-    // Rho and pi
-    let mut last = a[1];
-    for x in 0..24 {
-        array[0] = a[PI[x]];
-        a[PI[x]] = last.rotate_left(RHO[x] as u32);
-        last = array[0];
-    }
-    //Compare
-    for i in 0..25 {
-        for bit in 0..64 {
-            let val = 1u64 << (63usize - bit);
-            let a_set = a[i] & val != 0u64;
-            assert_eq!(B[(i * 64usize) + bit], a_set);
-        }
-    }
-
     // # χ step
     // A[x,y] = B[x,y] xor ((not B[x+1,y]) and B[x+2,y]),  for (x,y) in (0…4,0…4)
     let mut A_new2 = vec![false; 1600];
@@ -260,25 +212,6 @@ fn Round_1600(A: &Vec<bool>, a: &mut [u64; 25], RC: u64) -> Vec<bool> {
             for bit in 0..64 {
                 A_new2[(y * 320usize) + (x * 64usize) + bit] = B[(y * 320usize) + (x * 64usize) + bit] ^ ((!B[(y * 320usize) + (((x + 1usize) % 5usize) * 64usize) + bit]) & B[(y * 320usize) + (((x + 2usize) % 5usize) * 64usize) + bit]);
             }
-        }
-    }
-
-    // Chi
-    for y_step in 0..5 {
-        let y = y_step * 5;
-        for x in 0..5 {
-            array[x] = a[y + x];
-        }
-        for x in 0..5 {
-            a[y + x] = array[x] ^ ((!array[(x + 1) % 5]) & (array[(x + 2) % 5]));
-        }
-    }
-    //Compare
-    for i in 0..25 {
-        for bit in 0..64 {
-            let val = 1u64 << (63usize - bit);
-            let a_set = a[i] & val != 0u64;
-            assert_eq!(A_new2[(i * 64usize) + bit], a_set);
         }
     }
 
@@ -296,73 +229,49 @@ fn Round_1600(A: &Vec<bool>, a: &mut [u64; 25], RC: u64) -> Vec<bool> {
         A_new2[bit] = A_new2[bit] ^ RC_bits[bit];
     }
 
-    // Iota
-    a[0] ^= RC;
-    //Compare
-    for i in 0..25 {
-        for bit in 0..64 {
-            let val = 1u64 << (63usize - bit);
-            let a_set = a[i] & val != 0u64;
-            assert_eq!(A_new2[(i * 64usize) + bit], a_set);
-        }
-    }
-
     return A_new2;
 }
 
-// fn Keccak_256_512(Mbytes: &Vec<bool>) -> Vec<bool> {
-//     assert_eq!(Mbytes.len(), 512);
+fn Keccak_256_512(Mbytes: &Vec<bool>) -> Vec<bool> {
+    assert_eq!(Mbytes.len(), 512);
 
-//     // # Padding
-//     // d = 2^|Mbits| + sum for i=0..|Mbits|-1 of 2^i*Mbits[i]
-//     // P = Mbytes || d || 0x00 || … || 0x00
-//     // P = P xor (0x00 || … || 0x00 || 0x80)
-//     let mut P_append = vec![false; 1600];
-//     //0x0600 ... 0080
-//     P_append[5] = true;
-//     P_append[6] = true;
-//     P_append[1592] = true;
+    // # Padding
+    // d = 2^|Mbits| + sum for i=0..|Mbits|-1 of 2^i*Mbits[i]
+    // P = Mbytes || d || 0x00 || … || 0x00
+    // P = P xor (0x00 || … || 0x00 || 0x80)
+    //0x0600 ... 0080
 
-//     // # Initialization
-//     // S[x,y] = 0,                               for (x,y) in (0…4,0…4)
-//     let mut S = vec![false; 1600];
+    // # Initialization
+    // S[x,y] = 0,                               for (x,y) in (0…4,0…4)
+    let mut P_append = vec![false; 1088];//1600-512
+    let mut S = Mbytes.clone();
+    S.append(&mut P_append);
 
-//     // # Absorbing phase
-//     // for each block Pi in P
-//     //   S[x,y] = S[x,y] xor Pi[x+5*y],          for (x,y) such that x+5*y < r/w
-//     //   S = Keccak-f[r+c](S)
-//     for x in 0..5 {
-//         for y in 0..5 {
-//             for bit in 0..64 {
-//                 S[(y * 320usize) + (x * 64usize) + bit] = Mbytes[(y * 320usize) + (x * 64usize) + bit];
-//             }
-//         }
-//     }
-//     S = keccak_f_1600(S);
-//     for x in 0..5 {
-//         for y in 0..5 {
-//             for bit in 0..64 {
-//                 S[(y * 320usize) + (x * 64usize) + bit] = S[(y * 320usize) + (x * 64usize) + bit] ^ P_append[(y * 320usize) + (x * 64usize) + bit];
-//             }
-//         }
-//     }
-//     S = keccak_f_1600(S);
+    // # Absorbing phase
+    // for each block Pi in P
+    //   S[x,y] = S[x,y] xor Pi[x+5*y],          for (x,y) such that x+5*y < r/w
+    //   S = Keccak-f[r+c](S)
+    S[61] = S[61] ^ true;
+    S[62] = S[62] ^ true;
+    S[1024] = S[1024] ^ true;
 
-//     // # Squeezing phase
-//     // Z = empty string
-//     let mut Z = vec![false; 256];
+    S = keccak_f_1600(S);
 
-//     // while output is requested
-//     //   Z = Z || S[x,y],                        for (x,y) such that x+5*y < r/w
-//     //   S = Keccak-f[r+c](S)
-//     for bit in 0..256 {
-//         Z[bit] = S[bit];
-//     }
+    // # Squeezing phase
+    // Z = empty string
+    let mut Z = vec![false; 256];
 
-//     return Z;
-// }
+    // while output is requested
+    //   Z = Z || S[x,y],                        for (x,y) such that x+5*y < r/w
+    //   S = Keccak-f[r+c](S)
+    for bit in 0..256 {
+        Z[bit] = S[bit];
+    }
 
-fn Keccak_256_0() -> (Vec<bool>,Vec<u64>) {
+    return Z;
+}
+
+fn Keccak_256_0() -> Vec<bool> {
     // # Padding
     // d = 2^|Mbits| + sum for i=0..|Mbits|-1 of 2^i*Mbits[i]
     // P = Mbytes || d || 0x00 || … || 0x00
@@ -381,24 +290,10 @@ fn Keccak_256_0() -> (Vec<bool>,Vec<u64>) {
     // S[x,y] = 0,                               for (x,y) in (0…4,0…4)
     let mut S = vec![false; 1600];
 
-    let mut a = [0u64; 25];
-    // a[0] = 0x0600000000000000u64;
-    // a[16] = 0x80u64;
-    a[0] = 0x06u64;
-    a[16] = 0x8000000000000000u64;
-
     // # Absorbing phase
     // for each block Pi in P
     //   S[x,y] = S[x,y] xor Pi[x+5*y],          for (x,y) such that x+5*y < r/w
     //   S = Keccak-f[r+c](S)
-    // for x in 0..5 {
-    //     for y in 0..5 {
-    //         for bit in 0..64 {
-    //             S[(y * 320usize) + (x * 64usize) + bit] = Mbytes[(y * 320usize) + (x * 64usize) + bit];
-    //         }
-    //     }
-    // }
-    // S = keccak_f_1600(S);
     for x in 0..5 {
         for y in 0..5 {
             for bit in 0..64 {
@@ -406,7 +301,7 @@ fn Keccak_256_0() -> (Vec<bool>,Vec<u64>) {
             }
         }
     }
-    S = keccak_f_1600(S, &mut a);
+    S = keccak_f_1600(S);
 
     // # Squeezing phase
     // Z = empty string
@@ -419,7 +314,7 @@ fn Keccak_256_0() -> (Vec<bool>,Vec<u64>) {
         Z[bit] = S[bit];
     }
 
-    return (Z, a.to_vec());
+    return Z;
 }
 
 //Circuit & gadget
@@ -470,7 +365,7 @@ mod test {
         //0xa7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a
         assert_eq!(BigUint::from_bytes_be(&hash_sha3), BigUint::from_str("75988164966894747974200307809782762084705920897667750218208675113520516842314").unwrap());
 
-        let (hash_vector, a) = super::Keccak_256_0();
+        let hash_vector = super::Keccak_256_0();
 
         //Convert from little-endian
         let mut hash = [0u8; 32];
@@ -488,24 +383,55 @@ mod test {
         assert_eq!(BigUint::from_bytes_be(&hash), BigUint::from_str("75988164966894747974200307809782762084705920897667750218208675113520516842314").unwrap());
     }
 
-    #[ignore]
     #[test]
     fn test_Keccak_256_512() {
         let mut rng = rand::thread_rng();
         for _ in 0..1 {
-            let rand_value_left = rng.gen::<[u8; 32]>(); //256 bits
-            let rand_value_right = rng.gen::<[u8; 32]>(); //256 bits
-
-            let mut hash = [0u8; 32];
-
             let mut keccak = Keccak::v256();
 
-            keccak.update(&rand_value_left);
-            keccak.update(&rand_value_right);
-            keccak.finalize(&mut hash);
+            let mut rand_value = [0u8; 64];
+            // rng.fill(&mut rand_value);                    // array fill
 
-            panic!("hash: {:?}", hash);
-            // assert_eq!(hash, CARP);
+            keccak.update(&rand_value);
+
+            let mut hash_source = [0u8; 32];
+            keccak.finalize(&mut hash_source);
+
+            //Prepare with be-to-le
+            let mut preimage = vec![false; 512];
+            for byte in 0usize..64usize {
+                let byte_input = byte;
+                let word_output = byte / 8usize;
+                let word_byte_output = 7usize - byte % 8usize;
+                let byte_output = (word_output * 8usize) + word_byte_output;
+
+                for bit in 0usize..8usize {
+                    preimage[(byte_output * 8usize) + bit] = (rand_value[byte_input] & (1u8 << bit)) != 0u8;
+                }
+
+                // let byte_input = byte;
+                // for bit in 0usize..8usize {
+                //     preimage[(byte_input * 8usize) + bit] = (rand_value[byte_input] & (1u8 << (7usize - bit))) != 0u8;
+                // }
+            }
+
+            //Call
+            let hash_vector = super::Keccak_256_512(&preimage);
+
+            //Convert from little-endian
+            let mut hash = [0u8; 32];
+            for bit in 0..256 {
+                if hash_vector[bit] {
+                    let byte_be = bit / 8usize;
+                    let word = bit / 64usize;
+                    let word_byte_le = 7usize - (byte_be % 8usize);
+                    let byte_le = (word * 8usize) + word_byte_le;
+                    let byte_bit = 7usize - (bit % 8usize);
+                    hash[byte_le] |= 1u8 << byte_bit;
+                }
+            }
+    
+            assert_eq!(hash, hash_source);
         }
     }
 }
