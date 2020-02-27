@@ -244,6 +244,10 @@ fn Keccak_256_512(Mbytes: &Vec<bool>) -> Vec<bool> {
     // # Initialization
     // S[x,y] = 0,                               for (x,y) in (0…4,0…4)
     let mut P_append = vec![false; 1088];//1600-512
+    P_append[61] = true;
+    P_append[62] = true;
+    P_append[1024 - 512] = true;
+
     let mut S = Mbytes.clone();
     S.append(&mut P_append);
 
@@ -251,9 +255,9 @@ fn Keccak_256_512(Mbytes: &Vec<bool>) -> Vec<bool> {
     // for each block Pi in P
     //   S[x,y] = S[x,y] xor Pi[x+5*y],          for (x,y) such that x+5*y < r/w
     //   S = Keccak-f[r+c](S)
-    S[61] = S[61] ^ true;
-    S[62] = S[62] ^ true;
-    S[1024] = S[1024] ^ true;
+    // S[61] = S[61] ^ true;
+    // S[62] = S[62] ^ true;
+    // S[1024] = S[1024] ^ true;
 
     S = keccak_f_1600(S);
 
@@ -387,15 +391,21 @@ mod test {
     fn test_Keccak_256_512() {
         let mut rng = rand::thread_rng();
         for _ in 0..1 {
-            let mut keccak = Keccak::v256();
+            // let mut keccak = Keccak::v256();
+            let mut sha3 = Sha3::v256();
 
             let mut rand_value = [0u8; 64];
-            // rng.fill(&mut rand_value);                    // array fill
+            rng.fill(&mut rand_value);                    // array fill
+            // rand_value[0] = 255u8;
+            // rand_value[0] = 125u8;
+            // rand_value[63] = 255u8;
 
-            keccak.update(&rand_value);
+            // keccak.update(&rand_value);
+            sha3.update(&rand_value);
 
             let mut hash_source = [0u8; 32];
-            keccak.finalize(&mut hash_source);
+            // keccak.finalize(&mut hash_source);
+            sha3.finalize(&mut hash_source);
 
             //Prepare with be-to-le
             let mut preimage = vec![false; 512];
@@ -406,7 +416,8 @@ mod test {
                 let byte_output = (word_output * 8usize) + word_byte_output;
 
                 for bit in 0usize..8usize {
-                    preimage[(byte_output * 8usize) + bit] = (rand_value[byte_input] & (1u8 << bit)) != 0u8;
+                    let byte_bit = 7usize - (bit % 8usize);
+                    preimage[(byte_output * 8usize) + byte_bit] = (rand_value[byte_input] & (1u8 << bit)) != 0u8;
                 }
 
                 // let byte_input = byte;
