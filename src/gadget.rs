@@ -1,6 +1,7 @@
 use core::convert::{TryFrom, TryInto};
 
 use bellman::gadgets::boolean::{AllocatedBit, Boolean};
+// use bellman::gadgets::boolean::Boolean;
 use bellman::gadgets::multipack;
 use bellman::gadgets::num::AllocatedNum;
 use bellman::gadgets::sha256::sha256;
@@ -11,6 +12,7 @@ use bellman::{Circuit, ConstraintSystem}; //Variable
 use ff::Field;
 use ff::PrimeField;
 use ff::PrimeFieldRepr;
+use ff::ScalarEngine;
 use pairing::bls12_381::Bls12;
 use pairing::Engine;
 
@@ -154,13 +156,29 @@ fn keccak_f_1600(input: Vec<bool>) -> Vec<bool> {
     let mut A = input;
 
     for i in 0..24 {
-        A = Round_1600(&A, ROUND_CONSTANTS[i]);
+        A = round_1600(&A, ROUND_CONSTANTS[i]);
     }
 
     return A;
 }
 
-fn Round_1600(A: &Vec<bool>, RC: u64) -> Vec<bool> {
+fn xor_2(a : &bool, b : &bool) -> bool {
+    a ^ b
+}
+
+fn xor_3(a : &bool, b : &bool, c : &bool) -> bool {
+    a ^ b ^ c
+}
+
+fn xor_5(a : &bool, b : &bool, c : &bool, d : &bool, e : &bool) -> bool {
+    a ^ b ^ c ^ d ^ e
+}
+
+fn xor_not_and(a : &bool, b : &bool, c : &bool) -> bool {
+    a ^ ((!b) & c)
+}
+
+fn round_1600(A: &Vec<bool>, RC: u64) -> Vec<bool> {
     assert_eq!(A.len(), 1600);//64*25
 
     // # θ step
@@ -168,25 +186,17 @@ fn Round_1600(A: &Vec<bool>, RC: u64) -> Vec<bool> {
     let mut C = vec![false; 320];
     for x in 0..5 {
         for bit in 0..64 {
-            C[(x * 64usize) + bit] = A[(x * 64usize) + bit + (0usize * 320usize)] ^ A[(x * 64usize) + bit + (1usize * 320usize)] ^ A[(x * 64usize) + bit + (2usize * 320usize)] ^ A[(x * 64usize) + bit + (3usize * 320usize)] ^ A[(x * 64usize) + bit + (4usize * 320usize)];
+            C[(x * 64usize) + bit] = xor_5(&A[(x * 64usize) + bit + (0usize * 320usize)], &A[(x * 64usize) + bit + (1usize * 320usize)], &A[(x * 64usize) + bit + (2usize * 320usize)], &A[(x * 64usize) + bit + (3usize * 320usize)], &A[(x * 64usize) + bit + (4usize * 320usize)]);
         }
     }
-    // // D[x] = C[x-1] xor rot(C[x+1],1),                             for x in 0…4
-    // let mut D = vec![false; 320];
-    // for x in 0..5 {
-    //     for bit in 0..64 {
-    //         //x-1 == (x+4)%5
-    //         //bit-1 == (bit+63)%64
-    //         D[(x * 64usize) + bit] = C[(((x + 4usize) % 5usize) * 64usize) + bit] ^ C[(((x + 1usize) % 5usize) * 64usize) + ((bit + 1usize) % 64)];
-    //     }
-    // }
+    // D[x] = C[x-1] xor rot(C[x+1],1),                             for x in 0…4
     // A[x,y] = A[x,y] xor D[x],                           for (x,y) in (0…4,0…4)
     let mut A_new1 = vec![false; 1600];
     for x in 0..5 {
         for y in 0..5 {
             for bit in 0..64 {
                 // A_new1[(y * 320usize) + (x * 64usize) + bit] = A[(y * 320usize) + (x * 64usize) + bit] ^ D[(x * 64usize) + bit];
-                A_new1[(y * 320usize) + (x * 64usize) + bit] = A[(y * 320usize) + (x * 64usize) + bit] ^ (C[(((x + 4usize) % 5usize) * 64usize) + bit] ^ C[(((x + 1usize) % 5usize) * 64usize) + ((bit + 1usize) % 64)]);
+                A_new1[(y * 320usize) + (x * 64usize) + bit] = xor_3(&A[(y * 320usize) + (x * 64usize) + bit], &C[(((x + 4usize) % 5usize) * 64usize) + bit], &C[(((x + 1usize) % 5usize) * 64usize) + ((bit + 1usize) % 64)]);
             }
         }
     }
@@ -211,7 +221,7 @@ fn Round_1600(A: &Vec<bool>, RC: u64) -> Vec<bool> {
     for x in 0..5 {
         for y in 0..5 {
             for bit in 0..64 {
-                A_new2[(y * 320usize) + (x * 64usize) + bit] = B[(y * 320usize) + (x * 64usize) + bit] ^ ((!B[(y * 320usize) + (((x + 1usize) % 5usize) * 64usize) + bit]) & B[(y * 320usize) + (((x + 2usize) % 5usize) * 64usize) + bit]);
+                A_new2[(y * 320usize) + (x * 64usize) + bit] = xor_not_and(&B[(y * 320usize) + (x * 64usize) + bit], &B[(y * 320usize) + (((x + 1usize) % 5usize) * 64usize) + bit], &B[(y * 320usize) + (((x + 2usize) % 5usize) * 64usize) + bit]);
             }
         }
     }
@@ -227,7 +237,7 @@ fn Round_1600(A: &Vec<bool>, RC: u64) -> Vec<bool> {
     }
     // A[0,0] = A[0,0] xor RC
     for bit in 0..64 {
-        A_new2[bit] = A_new2[bit] ^ RC_bits[bit];
+        A_new2[bit] = xor_2(&A_new2[bit], &RC_bits[bit]);
     }
 
     return A_new2;
@@ -271,51 +281,117 @@ fn Keccak_256_512(Mbytes: &Vec<bool>) -> Vec<bool> {
     return Z;
 }
 
-// fn Keccak_256_0() -> Vec<bool> {
-//     // # Padding
-//     // d = 2^|Mbits| + sum for i=0..|Mbits|-1 of 2^i*Mbits[i]
-//     // P = Mbytes || d || 0x00 || … || 0x00
-//     // P = P xor (0x00 || … || 0x00 || 0x80)
-//     let mut P_append = vec![false; 1600];
-//     //0x0600 ... 0080
-//     // P_append[5] = true;
-//     // P_append[6] = true;
-//     // P_append[1080] = true;
-//     P_append[61] = true;
-//     P_append[62] = true;
-//     P_append[1024] = true;
+fn xor_2_b<E, CS>(cs: CS, a : &Boolean, b : &Boolean) -> Result<Boolean, SynthesisError>
+where
+    E: ScalarEngine,
+    CS: ConstraintSystem<E>,
+{
+    Boolean::xor(cs.namespace(|| "xor_2"), a, b)
+}
 
+fn xor_3_b<E, CS>(cs: CS, a : &Boolean, b : &Boolean, c : &Boolean) -> Result<Boolean, SynthesisError>
+where
+    E: ScalarEngine,
+    CS: ConstraintSystem<E>,
+{
+    // a ^ b ^ c
+    let ab = Boolean::xor(cs.namespace(|| "xor_3 first"), a, b)?;
+    Boolean::xor(cs.namespace(|| "xor_3 second"), &ab, c)
+}
 
-//     // # Initialization
-//     // S[x,y] = 0,                               for (x,y) in (0…4,0…4)
-//     let mut S = vec![false; 1600];
+fn xor_5_b<E, CS>(cs: CS, a : &Boolean, b : &Boolean, c : &Boolean, d : &Boolean, e : &Boolean) -> Result<Boolean, SynthesisError>
+where
+    E: ScalarEngine,
+    CS: ConstraintSystem<E>,
+{
+    // a ^ b ^ c ^ d ^ e
+    let ab = Boolean::xor(cs.namespace(|| "xor_5 first"), a, b)?;
+    let abc = Boolean::xor(cs.namespace(|| "xor_5 second"), &ab, c)?;
+    let abcd = Boolean::xor(cs.namespace(|| "xor_5 third"), &abc, d)?;
+    Boolean::xor(cs.namespace(|| "xor_5 fourth"), &abcd, c)
+}
 
-//     // # Absorbing phase
-//     // for each block Pi in P
-//     //   S[x,y] = S[x,y] xor Pi[x+5*y],          for (x,y) such that x+5*y < r/w
-//     //   S = Keccak-f[r+c](S)
-//     for x in 0..5 {
-//         for y in 0..5 {
-//             for bit in 0..64 {
-//                 S[(y * 320usize) + (x * 64usize) + bit] = S[(y * 320usize) + (x * 64usize) + bit] ^ P_append[(y * 320usize) + (x * 64usize) + bit];
-//             }
-//         }
-//     }
-//     S = keccak_f_1600(S);
+fn xor_not_and_b<E, CS>(cs: CS, a : &Boolean, b : &Boolean, c : &Boolean) -> Result<Boolean, SynthesisError>
+where
+    E: ScalarEngine,
+    CS: ConstraintSystem<E>,
+{
+    // a ^ ((!b) & c)
+    let nb = b.not();
+    let nbc = Boolean::xor(cs.namespace(|| "xor_not_and second"), &nb, c)?;
+    Boolean::xor(cs.namespace(|| "xor_not_and third"), a, &nbc)
+}
 
-//     // # Squeezing phase
-//     // Z = empty string
-//     let mut Z = vec![false; 256];
+fn round_1600_b<E, CS>(cs: CS, A: &[Boolean; 1600], RC: u64) -> Result<[Boolean; 1600], SynthesisError>
+where
+    E: ScalarEngine,
+    CS: ConstraintSystem<E>,
+{
+    assert_eq!(A.len(), 1600);//64*25
 
-//     // while output is requested
-//     //   Z = Z || S[x,y],                        for (x,y) such that x+5*y < r/w
-//     //   S = Keccak-f[r+c](S)
-//     for bit in 0..256 {
-//         Z[bit] = S[bit];
-//     }
+    // # θ step
+    // C[x] = A[x,0] xor A[x,1] xor A[x,2] xor A[x,3] xor A[x,4],   for x in 0…4
+    let mut C : [Boolean; 320];
+    for x in 0..5 {
+        for bit in 0..64 {
+            C[(x * 64usize) + bit] = xor_5_b(cs, &A[(x * 64usize) + bit + (0usize * 320usize)], &A[(x * 64usize) + bit + (1usize * 320usize)], &A[(x * 64usize) + bit + (2usize * 320usize)], &A[(x * 64usize) + bit + (3usize * 320usize)], &A[(x * 64usize) + bit + (4usize * 320usize)])?;
+        }
+    }
+    // D[x] = C[x-1] xor rot(C[x+1],1),                             for x in 0…4
+    // A[x,y] = A[x,y] xor D[x],                           for (x,y) in (0…4,0…4)
+    let mut A_new1 : [Boolean; 1600];
+    for x in 0..5 {
+        for y in 0..5 {
+            for bit in 0..64 {
+                // A_new1[(y * 320usize) + (x * 64usize) + bit] = A[(y * 320usize) + (x * 64usize) + bit] ^ D[(x * 64usize) + bit];
+                A_new1[(y * 320usize) + (x * 64usize) + bit] = xor_3_b(cs, &A[(y * 320usize) + (x * 64usize) + bit], &C[(((x + 4usize) % 5usize) * 64usize) + bit], &C[(((x + 1usize) % 5usize) * 64usize) + ((bit + 1usize) % 64)])?;
+            }
+        }
+    }
 
-//     return Z;
-// }
+    // # ρ and π steps
+    // B[y,2*x+3*y] = rot(A[x,y], r[x,y]),                 for (x,y) in (0…4,0…4)
+    let mut B : [Boolean; 1600];
+    for bit in 0..64 {//Since PI[] doesn't contain 0
+        B[bit] = A_new1[bit];
+    }
+    let mut last = 1usize;
+    for i in 0..24 {
+        for bit in 0..64 {
+            B[(PI[i] * 64usize) + bit] = A_new1[(last * 64usize) + ((bit + RHO[i]) % 64usize)];
+        }
+        last = PI[i];
+    }
+
+    // # χ step
+    // A[x,y] = B[x,y] xor ((not B[x+1,y]) and B[x+2,y]),  for (x,y) in (0…4,0…4)
+    let mut A_new2 : [Boolean; 1600];
+    for x in 0..5 {
+        for y in 0..5 {
+            for bit in 0..64 {
+                A_new2[(y * 320usize) + (x * 64usize) + bit] = xor_not_and_b(cs, &B[(y * 320usize) + (x * 64usize) + bit], &B[(y * 320usize) + (((x + 1usize) % 5usize) * 64usize) + bit], &B[(y * 320usize) + (((x + 2usize) % 5usize) * 64usize) + bit])?;
+            }
+        }
+    }
+
+    // # ι step
+    let mut RC_bits = vec![false; 64];
+    for bit in 0..64 {
+        let val = 1u64 << (63usize - bit);
+        // let val = 1u64 << bit;
+        if RC & val != 0u64 {
+            RC_bits[bit] = true;
+        } else {
+            RC_bits[bit] = false;
+        }
+    }
+    // A[0,0] = A[0,0] xor RC
+    for bit in 0..64 {
+        A_new2[bit] = xor_2_b(cs, &A_new2[bit], &RC_bits[bit])?;
+    }
+
+    Ok(A_new2)
+}
 
 //Circuit & gadget
 impl<E: Engine> Circuit<E> for Sha3_256Gadget {
