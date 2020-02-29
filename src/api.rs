@@ -7,17 +7,17 @@ use bellman::groth16::{create_random_proof, prepare_verifying_key, verify_proof}
 
 use pairing::bls12_381::Bls12;
 
-use tiny_keccak::Keccak;
+// use tiny_keccak::Keccak;
 
 #[cfg(feature = "std")]
-use rand_core::{OsRng, RngCore};
+use rand_core::{OsRng};//RngCore
 #[cfg(not(feature = "std"))]
 use rand_core::{RngCore, SeedableRng};
 #[cfg(not(feature = "std"))]
 use rand_xorshift::XorShiftRng;
 
 use crate::gadget::{Proof, Sha3_256Gadget, SetupParams};
-use crate::types::{Credentials, Error, Login, H256, H512};
+use crate::types::{Credentials, Error, Login};//, H256, H512
 
 #[cfg(feature = "std")]
 pub fn generate() -> Result<SetupParams, Error> {

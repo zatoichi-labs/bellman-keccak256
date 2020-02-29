@@ -10,6 +10,7 @@ pub use api::Seed;
 pub use api::{prove, verify};
 
 mod gadget;
+mod uint64;
 #[cfg(not(feature = "python"))]
 pub use gadget::{Proof, SetupParams};
 

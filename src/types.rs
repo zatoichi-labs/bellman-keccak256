@@ -218,7 +218,7 @@ impl Credentials {
     }
 
     pub fn as_vec(&self) -> Vec<u8> {
-        let mut serialized_data = self.preimage.to_vec();
+        let serialized_data = self.preimage.to_vec();
         serialized_data
     }
 }
