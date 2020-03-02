@@ -10,14 +10,14 @@ use pairing::bls12_381::Bls12;
 // use tiny_keccak::Keccak;
 
 #[cfg(feature = "std")]
-use rand_core::{OsRng};//RngCore
+use rand_core::OsRng; //RngCore
 #[cfg(not(feature = "std"))]
 use rand_core::{RngCore, SeedableRng};
 #[cfg(not(feature = "std"))]
 use rand_xorshift::XorShiftRng;
 
-use crate::gadget::{Proof, Sha3_256Gadget, SetupParams};
-use crate::types::{Credentials, Error, Login};//, H256, H512
+use crate::gadget::{Proof, SetupParams, Sha3_256Gadget};
+use crate::types::{Credentials, Error, Login}; //, H256, H512
 
 #[cfg(feature = "std")]
 pub fn generate() -> Result<SetupParams, Error> {
@@ -70,9 +70,7 @@ pub fn verify(params: &SetupParams, x: PublicInputs, proof: Proof) -> bool {
 }
 
 #[cfg(all(test, not(feature = "std")))]
-mod no_std_test {
-}
+mod no_std_test {}
 
 #[cfg(all(test, feature = "std"))]
-mod std_test {
-}
+mod std_test {}

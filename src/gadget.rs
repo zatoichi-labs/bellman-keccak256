@@ -1,17 +1,17 @@
 use core::convert::{TryFrom, TryInto};
 
-use bellman::gadgets::boolean::{Boolean};//AllocatedBit
-// use bellman::gadgets::boolean::Boolean;
-// use bellman::gadgets::multipack;
-// use bellman::gadgets::num::AllocatedNum;
-// use bellman::gadgets::sha256::sha256;
+use bellman::gadgets::boolean::Boolean; //AllocatedBit
+                                        // use bellman::gadgets::boolean::Boolean;
+                                        // use bellman::gadgets::multipack;
+                                        // use bellman::gadgets::num::AllocatedNum;
+                                        // use bellman::gadgets::sha256::sha256;
 use bellman::groth16::Parameters;
 use bellman::groth16::Proof as Groth16Proof;
 use bellman::SynthesisError;
 use bellman::{Circuit, ConstraintSystem}; //Variable
-// use ff::Field;
-// use ff::PrimeField;
-// use ff::PrimeFieldRepr;
+                                          // use ff::Field;
+                                          // use ff::PrimeField;
+                                          // use ff::PrimeFieldRepr;
 use ff::ScalarEngine;
 use pairing::bls12_381::Bls12;
 use pairing::Engine;
@@ -49,33 +49,9 @@ const ROUND_CONSTANTS: [u64; 24] = [
 const PI: [usize; 24] = [
     10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4, 15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1,
 ];
-// const ROTR: [usize; 25] = [ //(5*y)+x
-//     0,
-//     1,
-//     62,
-//     28,
-//     27,
-//     36,
-//     44,
-//     6,
-//     55,
-//     20,
-//     3,
-//     10,
-//     43,
-//     25,
-//     39,
-//     41,
-//     45,
-//     15,
-//     21,
-//     8,
-//     18,
-//     2,
-//     61,
-//     56,
-//     14,
-// ];
+const ROTR: [usize; 25] = [
+    0, 1, 62, 28, 27, 36, 44, 6, 55, 20, 3, 10, 43, 25, 39, 41, 45, 15, 21, 8, 18, 2, 61, 56, 14,
+];
 const RHO: [usize; 24] = [
     1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44,
 ];
@@ -100,15 +76,8 @@ impl Sha3_256Gadget {
     }
 
     /// Used when generating a proof
-    pub fn new(
-        hash: H256,
-        preimage: H512,
-    ) -> Self {
-
-        let input = Sha3_256GadgetInput {
-            hash,
-            preimage,
-        };
+    pub fn new(hash: H256, preimage: H512) -> Self {
+        let input = Sha3_256GadgetInput { hash, preimage };
         Self { input: Some(input) }
     }
 }
@@ -153,6 +122,7 @@ impl AsRef<[u8]> for Proof {
 }
 
 //Process
+#[cfg(test)]
 fn keccak_f_1600_primitive(input: Vec<bool>) -> Vec<bool> {
     let mut A = input;
 
@@ -163,31 +133,42 @@ fn keccak_f_1600_primitive(input: Vec<bool>) -> Vec<bool> {
     return A;
 }
 
-fn xor_2_primitive(a : &bool, b : &bool) -> bool {
+#[cfg(test)]
+fn xor_2_primitive(a: &bool, b: &bool) -> bool {
     a ^ b
 }
 
-fn xor_3_primitive(a : &bool, b : &bool, c : &bool) -> bool {
+#[cfg(test)]
+fn xor_3_primitive(a: &bool, b: &bool, c: &bool) -> bool {
     a ^ b ^ c
 }
 
-fn xor_5_primitive(a : &bool, b : &bool, c : &bool, d : &bool, e : &bool) -> bool {
+#[cfg(test)]
+fn xor_5_primitive(a: &bool, b: &bool, c: &bool, d: &bool, e: &bool) -> bool {
     a ^ b ^ c ^ d ^ e
 }
 
-fn xor_not_and_primitive(a : &bool, b : &bool, c : &bool) -> bool {
+#[cfg(test)]
+fn xor_not_and_primitive(a: &bool, b: &bool, c: &bool) -> bool {
     a ^ ((!b) & c)
 }
 
+#[cfg(test)]
 fn round_1600_primitive(A: &Vec<bool>, RC: u64) -> Vec<bool> {
-    assert_eq!(A.len(), 1600);//64*25
+    assert_eq!(A.len(), 1600); //64*25
 
     // # θ step
     // C[x] = A[x,0] xor A[x,1] xor A[x,2] xor A[x,3] xor A[x,4],   for x in 0…4
     let mut C = vec![false; 320];
     for x in 0..5 {
         for bit in 0..64 {
-            C[(x * 64usize) + bit] = xor_5_primitive(&A[(x * 64usize) + bit + (0usize * 320usize)], &A[(x * 64usize) + bit + (1usize * 320usize)], &A[(x * 64usize) + bit + (2usize * 320usize)], &A[(x * 64usize) + bit + (3usize * 320usize)], &A[(x * 64usize) + bit + (4usize * 320usize)]);
+            C[(x * 64usize) + bit] = xor_5_primitive(
+                &A[(x * 64usize) + bit + (0usize * 320usize)],
+                &A[(x * 64usize) + bit + (1usize * 320usize)],
+                &A[(x * 64usize) + bit + (2usize * 320usize)],
+                &A[(x * 64usize) + bit + (3usize * 320usize)],
+                &A[(x * 64usize) + bit + (4usize * 320usize)],
+            );
         }
     }
     // D[x] = C[x-1] xor rot(C[x+1],1),                             for x in 0…4
@@ -197,7 +178,11 @@ fn round_1600_primitive(A: &Vec<bool>, RC: u64) -> Vec<bool> {
         for y in 0..5 {
             for bit in 0..64 {
                 // A_new1[(y * 320usize) + (x * 64usize) + bit] = A[(y * 320usize) + (x * 64usize) + bit] ^ D[(x * 64usize) + bit];
-                A_new1[(y * 320usize) + (x * 64usize) + bit] = xor_3_primitive(&A[(y * 320usize) + (x * 64usize) + bit], &C[(((x + 4usize) % 5usize) * 64usize) + bit], &C[(((x + 1usize) % 5usize) * 64usize) + ((bit + 1usize) % 64)]);
+                A_new1[(y * 320usize) + (x * 64usize) + bit] = xor_3_primitive(
+                    &A[(y * 320usize) + (x * 64usize) + bit],
+                    &C[(((x + 4usize) % 5usize) * 64usize) + bit],
+                    &C[(((x + 1usize) % 5usize) * 64usize) + ((bit + 1usize) % 64)],
+                );
             }
         }
     }
@@ -205,7 +190,8 @@ fn round_1600_primitive(A: &Vec<bool>, RC: u64) -> Vec<bool> {
     // # ρ and π steps
     // B[y,2*x+3*y] = rot(A[x,y], r[x,y]),                 for (x,y) in (0…4,0…4)
     let mut B = vec![false; 1600];
-    for bit in 0..64 {//Since PI[] doesn't contain 0
+    for bit in 0..64 {
+        //Since PI[] doesn't contain 0
         B[bit] = A_new1[bit];
     }
     let mut last = 1usize;
@@ -222,7 +208,11 @@ fn round_1600_primitive(A: &Vec<bool>, RC: u64) -> Vec<bool> {
     for x in 0..5 {
         for y in 0..5 {
             for bit in 0..64 {
-                A_new2[(y * 320usize) + (x * 64usize) + bit] = xor_not_and_primitive(&B[(y * 320usize) + (x * 64usize) + bit], &B[(y * 320usize) + (((x + 1usize) % 5usize) * 64usize) + bit], &B[(y * 320usize) + (((x + 2usize) % 5usize) * 64usize) + bit]);
+                A_new2[(y * 320usize) + (x * 64usize) + bit] = xor_not_and_primitive(
+                    &B[(y * 320usize) + (x * 64usize) + bit],
+                    &B[(y * 320usize) + (((x + 1usize) % 5usize) * 64usize) + bit],
+                    &B[(y * 320usize) + (((x + 2usize) % 5usize) * 64usize) + bit],
+                );
             }
         }
     }
@@ -244,45 +234,55 @@ fn round_1600_primitive(A: &Vec<bool>, RC: u64) -> Vec<bool> {
     return A_new2;
 }
 
-fn Keccak_256_512_primitive(Mbytes: &Vec<bool>) -> Vec<bool> {
-    assert_eq!(Mbytes.len(), 512);
+#[cfg(test)]
+fn keccak_256_512_primitive(mbytes: &Vec<bool>) -> Vec<bool> {
+    assert_eq!(mbytes.len(), 512);
 
     // # Padding
     // d = 2^|Mbits| + sum for i=0..|Mbits|-1 of 2^i*Mbits[i]
     // P = Mbytes || d || 0x00 || … || 0x00
     // P = P xor (0x00 || … || 0x00 || 0x80)
     //0x0100 ... 0080
-    let mut P_append = vec![false; 1088];//1600-512
-    P_append[63] = true;
-    P_append[1024 - 512] = true;
+    let mut p_append = vec![false; 1088]; //1600-512
+    p_append[63] = true;
+    p_append[1024 - 512] = true;
 
     // # Initialization
     // S[x,y] = 0,                               for (x,y) in (0…4,0…4)
-    let mut S = Mbytes.clone();
-    S.append(&mut P_append);
+    let mut s = mbytes.clone();
+    s.append(&mut p_append);
 
     // # Absorbing phase
     // for each block Pi in P
     //   S[x,y] = S[x,y] xor Pi[x+5*y],          for (x,y) such that x+5*y < r/w
     //   S = Keccak-f[r+c](S)
 
-    S = keccak_f_1600_primitive(S);
+    s = keccak_f_1600_primitive(s);
 
     // # Squeezing phase
     // Z = empty string
-    let mut Z = vec![false; 256];
+    let mut z = vec![false; 256];
 
     // while output is requested
     //   Z = Z || S[x,y],                        for (x,y) such that x+5*y < r/w
     //   S = Keccak-f[r+c](S)
     for bit in 0..256 {
-        Z[bit] = S[bit];
+        z[bit] = s[bit];
     }
 
-    return Z;
+    return z;
 }
 
-fn xor_3<E, CS>(mut cs: CS, a : &UInt64, b : &UInt64, c : &UInt64) -> Result<UInt64, SynthesisError>
+fn xor_2<E, CS>(mut cs: CS, a: &UInt64, b: &UInt64) -> Result<UInt64, SynthesisError>
+where
+    E: ScalarEngine,
+    CS: ConstraintSystem<E>,
+{
+    // a ^ b
+    a.xor(cs.namespace(|| "xor_2"), b)
+}
+
+fn xor_3<E, CS>(mut cs: CS, a: &UInt64, b: &UInt64, c: &UInt64) -> Result<UInt64, SynthesisError>
 where
     E: ScalarEngine,
     CS: ConstraintSystem<E>,
@@ -292,7 +292,14 @@ where
     ab.xor(cs.namespace(|| "xor_3 second"), c)
 }
 
-fn xor_5<E, CS>(mut cs: CS, a : &UInt64, b : &UInt64, c : &UInt64, d : &UInt64, e : &UInt64) -> Result<UInt64, SynthesisError>
+fn xor_5<E, CS>(
+    mut cs: CS,
+    a: &UInt64,
+    b: &UInt64,
+    c: &UInt64,
+    d: &UInt64,
+    e: &UInt64,
+) -> Result<UInt64, SynthesisError>
 where
     E: ScalarEngine,
     CS: ConstraintSystem<E>,
@@ -304,128 +311,114 @@ where
     abcd.xor(cs.namespace(|| "xor_5 fourth"), e)
 }
 
-fn xor_not_and<E, CS>(mut cs: CS, a : &UInt64, b : &UInt64, c : &UInt64) -> Result<UInt64, SynthesisError>
+fn xor_not_and<E, CS>(
+    mut cs: CS,
+    a: &UInt64,
+    b: &UInt64,
+    c: &UInt64,
+) -> Result<UInt64, SynthesisError>
 where
     E: ScalarEngine,
     CS: ConstraintSystem<E>,
 {
     // a ^ ((!b) & c)
     let nb = b.not();
-    let nbc = nb.xor(cs.namespace(|| "xor_not_and second"), c)?;
+    let nbc = nb.and(cs.namespace(|| "xor_not_and second"), c)?;
     a.xor(cs.namespace(|| "xor_not_and third"), &nbc)
 }
 
-fn round_1600<E, CS>(mut cs: CS, A: Vec<Boolean>, RC: u64) -> Result<Vec<Boolean>, SynthesisError>
+fn round_1600<E, CS>(mut cs: CS, a: Vec<UInt64>, rc: u64) -> Result<Vec<UInt64>, SynthesisError>
 where
     E: ScalarEngine,
     CS: ConstraintSystem<E>,
 {
-    assert_eq!(A.len(), 1600);//64*25
+    assert_eq!(a.len(), 25);
 
-    let mut a = A
-        .chunks(64)
-        .map(|e| UInt64::from_bits_be(e))
-        .collect::<Vec<_>>();
+    // panic!("a: {:?}", a);
 
-    // // # θ step
-    // // C[x] = A[x,0] xor A[x,1] xor A[x,2] xor A[x,3] xor A[x,4],   for x in 0…4
-    // let mut C = [Option::None; 320];
-    // for x in 0..5 {
-    //     for bit in 0..64 {
-    //         C[(x * 64usize) + bit] = Some(xor_5_b(cs, &A[(x * 64usize) + bit + (0usize * 320usize)], &A[(x * 64usize) + bit + (1usize * 320usize)], &A[(x * 64usize) + bit + (2usize * 320usize)], &A[(x * 64usize) + bit + (3usize * 320usize)], &A[(x * 64usize) + bit + (4usize * 320usize)])?);
-    //     }
-    // }
+    // # θ step
+    // C[x] = A[x,0] xor A[x,1] xor A[x,2] xor A[x,3] xor A[x,4],   for x in 0…4
     let mut c = Vec::new();
     for x in 0..5 {
         let cs = &mut cs.namespace(|| format!("omega c {}", x));
 
-        c.push(xor_5(cs, &a[x], &a[x + 5], &a[x + 10], &a[x + 15], &a[x + 20])?);
+        c.push(xor_5(
+            cs,
+            &a[x + 0usize],
+            &a[x + 5usize],
+            &a[x + 10usize],
+            &a[x + 15usize],
+            &a[x + 20usize],
+        )?);
     }
-    // // D[x] = C[x-1] xor rot(C[x+1],1),                             for x in 0…4
-    // // A[x,y] = A[x,y] xor D[x],                           for (x,y) in (0…4,0…4)
-    // let A_new1 : [Boolean; 1600];
-    // for x in 0..5 {
-    //     for y in 0..5 {
-    //         for bit in 0..64 {
-    //             // A_new1[(y * 320usize) + (x * 64usize) + bit] = A[(y * 320usize) + (x * 64usize) + bit] ^ D[(x * 64usize) + bit];
-    //             A_new1[(y * 320usize) + (x * 64usize) + bit] = xor_3_b(cs, &A[(y * 320usize) + (x * 64usize) + bit], &C[(((x + 4usize) % 5usize) * 64usize) + bit].unwrap(), &C[(((x + 1usize) % 5usize) * 64usize) + ((bit + 1usize) % 64)].unwrap())?;
-    //         }
-    //     }
-    // }
-    let mut a_new1 = Vec::new();
+
+    // panic!("c: {:?}", c);
+
+    // D[x] = C[x-1] xor rot(C[x+1],1),                             for x in 0…4
+    let mut d = Vec::new();
     for x in 0..5 {
-        for y in 0..5 {
+        let cs = &mut cs.namespace(|| format!("omega d {}", x));
+
+        d.push(xor_2(
+            cs,
+            &c[(x + 4usize) % 5usize],
+            &c[(x + 1usize) % 5usize].rotl(1),
+        )?);
+    }
+
+    // panic!("d: {:?}", d);
+
+    // A[x,y] = A[x,y] xor D[x],                           for (x,y) in (0…4,0…4)
+    let mut a_new1 = Vec::new();
+    for y in 0..5 {
+        for x in 0..5 {
             let cs = &mut cs.namespace(|| format!("omega {},{}", x, y));
 
-            a_new1.push(xor_3(cs, &a[x + (y * 5usize)], &c[(x + 4usize) % 5usize], &c[(x + 1usize) % 5usize].rotr(1))?);
+            a_new1.push(xor_2(cs, &a[x + (y * 5usize)], &d[x])?);
         }
     }
 
-    // // # ρ and π steps
-    // // B[y,2*x+3*y] = rot(A[x,y], r[x,y]),                 for (x,y) in (0…4,0…4)
-    // let B : [&Boolean; 1600];
-    // for bit in 0..64 {//Since PI[] doesn't contain 0
-    //     B[bit] = &A_new1[bit];
-    // }
-    // let mut last = 1usize;
-    // for i in 0..24 {
-    //     for bit in 0..64 {
-    //         B[(PI[i] * 64usize) + bit] = &A_new1[(last * 64usize) + ((bit + RHO[i]) % 64usize)];
-    //     }
-    //     last = PI[i];
-    // }
-    let mut b = Vec::new();
-    b.push(a_new1[0].clone());//Since PI[] doesn't contain 0
-    let mut last = 1usize;
-    for i in 0..24 {
-        b.push(a_new1[last].rotr(RHO[i]));
-        last = PI[i];
+    // panic!("a_new1: {:?}", a_new1);
+
+    // # ρ and π steps
+    // B[y,2*x+3*y] = rot(A[x,y], r[x,y]),                 for (x,y) in (0…4,0…4)
+    let mut b = a_new1.clone();
+    for y in 0..5 {
+        for x in 0..5 {
+            b[y + ((((2 * x) + (3 * y)) % 5) * 5usize)] =
+                a_new1[x + (y * 5usize)].rotl(ROTR[x + (y * 5usize)]);
+        }
     }
+
+    // panic!("b: {:?}", b);
 
     let mut a_new2 = Vec::new();
 
-    // // # χ step
-    // // A[x,y] = B[x,y] xor ((not B[x+1,y]) and B[x+2,y]),  for (x,y) in (0…4,0…4)
-    // let A_new2 : [Boolean; 1600];
-    // for x in 0..5 {
-    //     for y in 0..5 {
-    //         for bit in 0..64 {
-    //             A_new2[(y * 320usize) + (x * 64usize) + bit] = xor_not_and_b(cs, B[(y * 320usize) + (x * 64usize) + bit], B[(y * 320usize) + (((x + 1usize) % 5usize) * 64usize) + bit], B[(y * 320usize) + (((x + 2usize) % 5usize) * 64usize) + bit])?;
-    //         }
-    //     }
-    // }
-    for x in 0..5 {
-        for y in 0..5 {
+    // # χ step
+    // A[x,y] = B[x,y] xor ((not B[x+1,y]) and B[x+2,y]),  for (x,y) in (0…4,0…4)
+    for y in 0..5 {
+        for x in 0..5 {
             let cs = &mut cs.namespace(|| format!("chi {},{}", x, y));
 
-            a_new2.push(xor_not_and(cs, &b[x + (y * 5usize)], &b[((x + 1usize) % 5usize) + (y * 5usize)], &b[((x + 2usize) % 5usize) + (y * 5usize)])?);
+            a_new2.push(xor_not_and(
+                cs,
+                &b[x + (y * 5usize)],
+                &b[((x + 1usize) % 5usize) + (y * 5usize)],
+                &b[((x + 2usize) % 5usize) + (y * 5usize)],
+            )?);
         }
     }
 
+    // panic!("a_new2: {:?}", a_new2);
+
     // // # ι step
-    // let RC_bits : [Boolean; 64];
-    // for bit in 0..64 {
-    //     let val = 1u64 << (63usize - bit);
-    //     // let val = 1u64 << bit;
-    //     if RC & val != 0u64 {
-    //         RC_bits[bit] = Boolean::Constant(true);
-    //     } else {
-    //         RC_bits[bit] = Boolean::Constant(false);
-    //     }
-    // }
     // // A[0,0] = A[0,0] xor RC
-    // for bit in 0..64 {
-    //     A_new2[bit] = xor_2_b(cs, &A_new2[bit], &RC_bits[bit])?;
-    // }
-    let rc = UInt64::constant(RC);
+    let rc = UInt64::constant(rc);
     a_new2[0] = a_new2[0].xor(cs.namespace(|| "xor RC"), &rc)?;
 
-    // let mut a = A
-    //     .chunks(64)
-    //     .map(|e| UInt64::from_bits_be(e))
-    //     .collect::<Vec<_>>();
+    // panic!("a_new2: {:?}", a_new2);
 
-    Ok(CARP)
+    Ok(a_new2)
 }
 
 fn keccak_f_1600<E, CS>(mut cs: CS, input: Vec<Boolean>) -> Result<Vec<Boolean>, SynthesisError>
@@ -435,36 +428,33 @@ where
 {
     assert_eq!(input.len(), 1600);
 
-    let mut A = input;
+    let mut a = input
+        .chunks(64)
+        .map(|e| UInt64::from_bits(e))
+        .collect::<Vec<_>>();
 
     for i in 0..24 {
         let cs = &mut cs.namespace(|| format!("keccack round {}", i));
 
-        A = round_1600(cs, A, ROUND_CONSTANTS[i])?;
+        a = round_1600(cs, a, ROUND_CONSTANTS[i])?;
     }
 
-    return Ok(A);
+    let a_new = a.into_iter().flat_map(|e| e.into_bits()).collect();
+
+    return Ok(a_new);
 }
 
-fn Keccak_256_512<E, CS>(cs: CS, Mbytes: Vec<Boolean>) -> Result<Vec<Boolean>, SynthesisError>
+fn keccak_256_512<E, CS>(cs: CS, input: Vec<Boolean>) -> Result<Vec<Boolean>, SynthesisError>
 where
     E: ScalarEngine,
     CS: ConstraintSystem<E>,
 {
-    assert_eq!(Mbytes.len(), 512);
+    assert_eq!(input.len(), 512);
 
     let mut m = Vec::new();
-    // for i in 0..512 {
-    //     m[i] = Mbytes[i].clone();
-    // }
-    // for i in 512..1600 {
-    //     m[i] = Boolean::Constant(false);
-    // }
     for i in 0..1600 {
         if i < 512 {
-            unsafe {
-                m.push(Mbytes[i].clone());
-            }
+            m.push(input[i].clone());
         } else {
             m.push(Boolean::Constant(false));
         }
@@ -475,8 +465,8 @@ where
     // P = Mbytes || d || 0x00 || … || 0x00
     // P = P xor (0x00 || … || 0x00 || 0x80)
     //0x0100 ... 0080
-    m[63 + 512] = Boolean::Constant(true);
-    m[1024] = Boolean::Constant(true);
+    m[512] = Boolean::Constant(true);
+    m[1087] = Boolean::Constant(true);
 
     // # Initialization
     // S[x,y] = 0,                               for (x,y) in (0…4,0…4)
@@ -490,22 +480,55 @@ where
 
     // # Squeezing phase
     // Z = empty string
-    let mut Z = Vec::new();
+    let mut z = Vec::new();
 
     // while output is requested
     //   Z = Z || S[x,y],                        for (x,y) such that x+5*y < r/w
     //   S = Keccak-f[r+c](S)
     for i in 0..256 {
-        Z.push(m[i].clone());
+        z.push(m[i].clone());
     }
 
-    return Ok(Z);
+    return Ok(z);
 }
 
 //Circuit & gadget
 impl<E: Engine> Circuit<E> for Sha3_256Gadget {
     fn synthesize<CS: ConstraintSystem<E>>(self, mut cs: &mut CS) -> Result<(), SynthesisError> {
         //TODO: Implement
+        let mut rand_value = [0u8; 64];
+
+        //Prepare preimage
+        let mut preimage = Vec::new();
+        for _ in 0..512 {
+            preimage.push(Boolean::Constant(false));
+        }
+        for byte in 0usize..64usize {
+            let byte_input = byte;
+            let byte_output = byte;
+
+            for bit in 0usize..8usize {
+                let byte_bit = bit;
+                let flag = (rand_value[byte_input] & (1u8 << bit)) != 0u8;
+                if flag {
+                    preimage[(byte_output * 8usize) + byte_bit] = Boolean::Constant(true);
+                }
+            }
+        }
+
+        //Call
+        let hash_vector = keccak_256_512(&mut cs, preimage).unwrap();
+
+        //Convert
+        let mut hash = [0u8; 32];
+        for bit in 0..256 {
+            if hash_vector[bit].get_value().unwrap() {
+                let byte_bit = bit % 8usize;
+                let byte_be = bit / 8usize;
+                hash[byte_be] |= 1u8 << byte_bit;
+            }
+        }
+
         panic!("Not implemented");
     }
 }
@@ -533,42 +556,13 @@ mod test {
     use pairing::bls12_381::Bls12;
     use pairing::Engine;
     // use ff::PrimeFieldRepr;
-    use bellman::gadgets::boolean::{Boolean};//AllocatedBit
+    use bellman::gadgets::boolean::Boolean; //AllocatedBit
     use bellman::gadgets::test::*;
     use ff::ScalarEngine; //BitIterator, Field
     use tiny_keccak::Keccak;
     // use tiny_keccak::Sha3;
+    use secp256k1::{PublicKey, Secp256k1, SecretKey};
     use tiny_keccak::Hasher;
-    use secp256k1::{PublicKey, SecretKey, Secp256k1};
-
-    // #[test]
-    // fn test_Keccak_256_0() {
-    //     let mut hash_sha3 = [0u8; 32];
-
-    //     let sha3 = Sha3::v256();
-
-    //     sha3.finalize(&mut hash_sha3);
-
-    //     //0xa7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a
-    //     assert_eq!(BigUint::from_bytes_be(&hash_sha3), BigUint::from_str("75988164966894747974200307809782762084705920897667750218208675113520516842314").unwrap());
-
-    //     let hash_vector = super::Keccak_256_0();
-
-    //     //Convert from little-endian
-    //     let mut hash = [0u8; 32];
-    //     for bit in 0..256 {
-    //         if hash_vector[bit] {
-    //             let byte_be = bit / 8;
-    //             let word = bit / 64;
-    //             let word_byte_le = 7 - (byte_be % 8);
-    //             let byte_le = (word * 8) + word_byte_le;
-    //             let byte_bit = 7 - (bit % 8);
-    //             hash[byte_le] = hash[byte_le] | (1u8 << byte_bit);
-    //         }
-    //     }
-
-    //     assert_eq!(BigUint::from_bytes_be(&hash), BigUint::from_str("75988164966894747974200307809782762084705920897667750218208675113520516842314").unwrap());
-    // }
 
     #[test]
     fn test_Keccak_256_512_primitive() {
@@ -577,7 +571,7 @@ mod test {
             let mut keccak = Keccak::v256();
 
             let mut rand_value = [0u8; 64];
-            rng.fill(&mut rand_value);                    // array fill
+            rng.fill(&mut rand_value); // array fill
 
             keccak.update(&rand_value);
 
@@ -594,12 +588,13 @@ mod test {
 
                 for bit in 0usize..8usize {
                     let byte_bit = 7usize - (bit % 8usize);
-                    preimage[(byte_output * 8usize) + byte_bit] = (rand_value[byte_input] & (1u8 << bit)) != 0u8;
+                    preimage[(byte_output * 8usize) + byte_bit] =
+                        (rand_value[byte_input] & (1u8 << bit)) != 0u8;
                 }
             }
 
             //Call
-            let hash_vector = super::Keccak_256_512_primitive(&preimage);
+            let hash_vector = super::keccak_256_512_primitive(&preimage);
 
             //Convert from little-endian
             let mut hash = [0u8; 32];
@@ -631,7 +626,10 @@ mod test {
 
         let secp = Secp256k1::new();
         {
-            let s = SecretKey::from_str("0000000000000000000000000000000000000000000000000000000000000001").unwrap();
+            let s = SecretKey::from_str(
+                "0000000000000000000000000000000000000000000000000000000000000001",
+            )
+            .unwrap();
             let public_key: PublicKey = PublicKey::from_secret_key(&secp, &s);
 
             let public_key_serial = public_key.serialize_uncompressed();
@@ -669,12 +667,13 @@ mod test {
 
                 for bit in 0usize..8usize {
                     let byte_bit = 7usize - (bit % 8usize);
-                    preimage_bits[(byte_output * 8usize) + byte_bit] = (preimage[byte_input] & (1u8 << bit)) != 0u8;
+                    preimage_bits[(byte_output * 8usize) + byte_bit] =
+                        (preimage[byte_input] & (1u8 << bit)) != 0u8;
                 }
             }
 
             //Call
-            let hash_vector = super::Keccak_256_512_primitive(&preimage_bits);
+            let hash_vector = super::keccak_256_512_primitive(&preimage_bits);
 
             //Convert from little-endian
             let mut hash = [0u8; 32];
@@ -696,7 +695,10 @@ mod test {
         }
 
         {
-            let s = SecretKey::from_str("d6840b79c2eb1f5ff97a41590df3e04d7d4b0965073ff2a9fbb7ff003799dc71").unwrap();
+            let s = SecretKey::from_str(
+                "d6840b79c2eb1f5ff97a41590df3e04d7d4b0965073ff2a9fbb7ff003799dc71",
+            )
+            .unwrap();
             let public_key: PublicKey = PublicKey::from_secret_key(&secp, &s);
 
             let public_key_serial = public_key.serialize_uncompressed();
@@ -722,7 +724,8 @@ mod test {
 
                 let address_hex = hex::encode(address);
 
-                let address_check = hex::decode("604a95C9165Bc95aE016a5299dd7d400dDDBEa9A").unwrap();
+                let address_check =
+                    hex::decode("604a95C9165Bc95aE016a5299dd7d400dDDBEa9A").unwrap();
                 let address_check_hex = hex::encode(address_check);
 
                 assert_eq!(address_hex, address_check_hex);
@@ -738,12 +741,13 @@ mod test {
 
                 for bit in 0usize..8usize {
                     let byte_bit = 7usize - (bit % 8usize);
-                    preimage_bits[(byte_output * 8usize) + byte_bit] = (preimage[byte_input] & (1u8 << bit)) != 0u8;
+                    preimage_bits[(byte_output * 8usize) + byte_bit] =
+                        (preimage[byte_input] & (1u8 << bit)) != 0u8;
                 }
             }
 
             //Call
-            let hash_vector = super::Keccak_256_512_primitive(&preimage_bits);
+            let hash_vector = super::keccak_256_512_primitive(&preimage_bits);
 
             //Convert from little-endian
             let mut hash = [0u8; 32];
@@ -769,7 +773,10 @@ mod test {
         }
 
         {
-            let s = SecretKey::from_str("d3cc16948a02a91b9fcf83735653bf3dfd82c86543fdd1e9a828bd25e8a7b68d").unwrap();
+            let s = SecretKey::from_str(
+                "d3cc16948a02a91b9fcf83735653bf3dfd82c86543fdd1e9a828bd25e8a7b68d",
+            )
+            .unwrap();
             let public_key: PublicKey = PublicKey::from_secret_key(&secp, &s);
 
             let public_key_serial = public_key.serialize_uncompressed();
@@ -795,7 +802,8 @@ mod test {
 
                 let address_hex = hex::encode(address);
 
-                let address_check = hex::decode("1c96099350f13D558464eC79B9bE4445AA0eF579").unwrap();
+                let address_check =
+                    hex::decode("1c96099350f13D558464eC79B9bE4445AA0eF579").unwrap();
                 let address_check_hex = hex::encode(address_check);
 
                 assert_eq!(address_hex, address_check_hex);
@@ -811,12 +819,13 @@ mod test {
 
                 for bit in 0usize..8usize {
                     let byte_bit = 7usize - (bit % 8usize);
-                    preimage_bits[(byte_output * 8usize) + byte_bit] = (preimage[byte_input] & (1u8 << bit)) != 0u8;
+                    preimage_bits[(byte_output * 8usize) + byte_bit] =
+                        (preimage[byte_input] & (1u8 << bit)) != 0u8;
                 }
             }
 
             //Call
-            let hash_vector = super::Keccak_256_512_primitive(&preimage_bits);
+            let hash_vector = super::keccak_256_512_primitive(&preimage_bits);
 
             //Convert from little-endian
             let mut hash = [0u8; 32];
@@ -849,26 +858,25 @@ mod test {
             let mut keccak = Keccak::v256();
 
             let mut rand_value = [0u8; 64];
-            rng.fill(&mut rand_value);                    // array fill
+            rng.fill(&mut rand_value); // array fill
+                                       // rand_value[0] = 1;
 
             keccak.update(&rand_value);
 
             let mut hash_source = [0u8; 32];
             keccak.finalize(&mut hash_source);
 
-            //Prepare with be-to-le
+            //Prepare preimage
             let mut preimage = Vec::new();
             for _ in 0..512 {
                 preimage.push(Boolean::Constant(false));
             }
             for byte in 0usize..64usize {
                 let byte_input = byte;
-                let word_output = byte / 8usize;
-                let word_byte_output = 7usize - byte % 8usize;
-                let byte_output = (word_output * 8usize) + word_byte_output;
+                let byte_output = byte;
 
                 for bit in 0usize..8usize {
-                    let byte_bit = 7usize - (bit % 8usize);
+                    let byte_bit = bit;
                     let flag = (rand_value[byte_input] & (1u8 << bit)) != 0u8;
                     if flag {
                         preimage[(byte_output * 8usize) + byte_bit] = Boolean::Constant(true);
@@ -879,18 +887,15 @@ mod test {
             let mut cs = TestConstraintSystem::<Bls12>::new();
 
             //Call
-            let hash_vector = super::Keccak_256_512(&mut cs, preimage).unwrap();
+            let hash_vector = super::keccak_256_512(&mut cs, preimage).unwrap();
 
-            //Convert from little-endian
+            //Convert
             let mut hash = [0u8; 32];
             for bit in 0..256 {
                 if hash_vector[bit].get_value().unwrap() {
+                    let byte_bit = bit % 8usize;
                     let byte_be = bit / 8usize;
-                    let word = bit / 64usize;
-                    let word_byte_le = 7usize - (byte_be % 8usize);
-                    let byte_le = (word * 8usize) + word_byte_le;
-                    let byte_bit = 7usize - (bit % 8usize);
-                    hash[byte_le] |= 1u8 << byte_bit;
+                    hash[byte_be] |= 1u8 << byte_bit;
                 }
             }
 

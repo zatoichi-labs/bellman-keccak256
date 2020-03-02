@@ -2,13 +2,11 @@
 //! gadgets.
 //!
 
-use ff::{Field, PrimeField, ScalarEngine};
-
-use bellman::{ConstraintSystem, LinearCombination, SynthesisError};
-
 use bellman::gadgets::boolean::{AllocatedBit, Boolean};
-
-use bellman::gadgets::multieq::MultiEq;
+// use bellman::gadgets::multieq::MultiEq;
+use bellman::{ConstraintSystem, SynthesisError};//LinearCombination
+use ff::{ScalarEngine};//PrimeField,Field
+use std::fmt;
 
 /// Represents an interpretation of 64 `Boolean` objects as an
 /// unsigned integer.
@@ -168,92 +166,23 @@ impl UInt64 {
         }
     }
 
-    pub fn shr(&self, by: usize) -> Self {
-        let by = by % 64;
-
-        let fill = Boolean::constant(false);
+    pub fn rotl(&self, by: usize) -> Self {
+        //ROTL = 64 - ROTR
+        let by = (64 - by) % 64;
 
         let new_bits = self
             .bits
-            .iter() // The bits are least significant first
-            .skip(by) // Skip the bits that will be lost during the shift
-            .chain(Some(&fill).into_iter().cycle()) // Rest will be zeros
-            .take(64) // Only 64 bits needed!
+            .iter()
+            .skip(by)
+            .chain(self.bits.iter())
+            .take(64)
             .cloned()
             .collect();
 
         UInt64 {
             bits: new_bits,
-            value: self.value.map(|v| v >> by as u64),
+            value: self.value.map(|v| v.rotate_right(by as u32)),
         }
-    }
-
-    fn triop<E, CS, F, U>(
-        mut cs: CS,
-        a: &Self,
-        b: &Self,
-        c: &Self,
-        tri_fn: F,
-        circuit_fn: U,
-    ) -> Result<Self, SynthesisError>
-    where
-        E: ScalarEngine,
-        CS: ConstraintSystem<E>,
-        F: Fn(u64, u64, u64) -> u64,
-        U: Fn(&mut CS, usize, &Boolean, &Boolean, &Boolean) -> Result<Boolean, SynthesisError>,
-    {
-        let new_value = match (a.value, b.value, c.value) {
-            (Some(a), Some(b), Some(c)) => Some(tri_fn(a, b, c)),
-            _ => None,
-        };
-
-        let bits = a
-            .bits
-            .iter()
-            .zip(b.bits.iter())
-            .zip(c.bits.iter())
-            .enumerate()
-            .map(|(i, ((a, b), c))| circuit_fn(&mut cs, i, a, b, c))
-            .collect::<Result<_, _>>()?;
-
-        Ok(UInt64 {
-            bits,
-            value: new_value,
-        })
-    }
-
-    /// Compute the `maj` value (a and b) xor (a and c) xor (b and c)
-    /// during SHA256.
-    pub fn sha256_maj<E, CS>(cs: CS, a: &Self, b: &Self, c: &Self) -> Result<Self, SynthesisError>
-    where
-        E: ScalarEngine,
-        CS: ConstraintSystem<E>,
-    {
-        Self::triop(
-            cs,
-            a,
-            b,
-            c,
-            |a, b, c| (a & b) ^ (a & c) ^ (b & c),
-            |cs, i, a, b, c| Boolean::sha256_maj(cs.namespace(|| format!("maj {}", i)), a, b, c),
-        )
-    }
-
-    /// Compute the `ch` value `(a and b) xor ((not a) and c)`
-    /// during SHA256.
-    pub fn sha256_ch<E, CS>(cs: CS, a: &Self, b: &Self, c: &Self) -> Result<Self, SynthesisError>
-    where
-        E: ScalarEngine,
-        CS: ConstraintSystem<E>,
-    {
-        Self::triop(
-            cs,
-            a,
-            b,
-            c,
-            |a, b, c| (a & b) ^ ((!a) & c),
-            |cs, i, a, b, c| Boolean::sha256_ch(cs.namespace(|| format!("ch {}", i)), a, b, c),
-        )
     }
 
     /// XOR this `UInt64` with another `UInt64`
@@ -281,6 +210,31 @@ impl UInt64 {
         })
     }
 
+    /// AND this `UInt64` with another `UInt64`
+    pub fn and<E, CS>(&self, mut cs: CS, other: &Self) -> Result<Self, SynthesisError>
+    where
+        E: ScalarEngine,
+        CS: ConstraintSystem<E>,
+    {
+        let new_value = match (self.value, other.value) {
+            (Some(a), Some(b)) => Some(a & b),
+            _ => None,
+        };
+
+        let bits = self
+            .bits
+            .iter()
+            .zip(other.bits.iter())
+            .enumerate()
+            .map(|(i, (a, b))| Boolean::and(cs.namespace(|| format!("and of bit {}", i)), a, b))
+            .collect::<Result<_, _>>()?;
+
+        Ok(UInt64 {
+            bits,
+            value: new_value,
+        })
+    }
+
     /// NOT this `UInt64`
     pub fn not(&self) -> Self {
         let new_value = match self.value {
@@ -288,16 +242,28 @@ impl UInt64 {
             _ => None,
         };
 
-        let bits = self
-            .bits
-            .iter()
-            .map(|a| a.not())
-            .collect();
+        let bits = self.bits.iter().map(|a| a.not()).collect();
 
         UInt64 {
             bits,
             value: new_value,
         }
+    }
+}
+
+impl fmt::Display for UInt64 {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        let tmp = format!("{:#x}", self.value.unwrap());
+
+        formatter.pad_integral(true, "UInt64 ", &tmp)
+    }
+}
+
+impl std::fmt::Debug for UInt64 {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        let tmp = format!("{:#x}", self.value.unwrap());
+
+        formatter.pad_integral(true, "UInt64 ", &tmp)
     }
 }
 

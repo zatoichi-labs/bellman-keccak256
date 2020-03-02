@@ -2,9 +2,9 @@ use core::convert::TryFrom;
 use core::slice::Iter;
 
 use bellman::SynthesisError;
-use tiny_keccak::Keccak;
-use tiny_keccak::Hasher;
 use std::io::Error as IoError;
+use tiny_keccak::Hasher;
+use tiny_keccak::Keccak;
 
 #[derive(Debug)]
 pub enum Error {
@@ -179,10 +179,7 @@ impl Login {
     pub fn new(hash: H256) -> Self {
         Self { hash }
     }
-    pub fn new_hash(
-        preimage_left: H256,
-        preimage_right: H256,
-    ) -> Self {
+    pub fn new_hash(preimage_left: H256, preimage_right: H256) -> Self {
         let mut keccak = Keccak::v256();
         let mut hash = [0u8; 32];
 
@@ -190,7 +187,9 @@ impl Login {
         keccak.update(&preimage_right.0);
         keccak.finalize(&mut hash);
 
-        Self { hash: H256::from(hash) }
+        Self {
+            hash: H256::from(hash),
+        }
     }
 
     pub fn as_vec(&self) -> Vec<u8> {
@@ -204,17 +203,13 @@ pub struct Credentials {
 }
 
 impl Credentials {
-    pub fn new(
-        preimage: &[u8; 64],
-    ) -> Result<Self, Error> {
+    pub fn new(preimage: &[u8; 64]) -> Result<Self, Error> {
         Ok(Self {
             preimage: H512::from(*preimage),
         })
     }
     pub fn new_raw(preimage: H512) -> Self {
-        Self {
-            preimage: preimage,
-        }
+        Self { preimage: preimage }
     }
 
     pub fn as_vec(&self) -> Vec<u8> {
