@@ -1,10 +1,11 @@
 use core::convert::{TryFrom, TryInto};
 
-use bellman::gadgets::boolean::Boolean; //AllocatedBit
-                                        // use bellman::gadgets::boolean::Boolean;
-                                        // use bellman::gadgets::multipack;
-                                        // use bellman::gadgets::num::AllocatedNum;
-                                        // use bellman::gadgets::sha256::sha256;
+use bellman::gadgets::boolean::{AllocatedBit, Boolean};
+// use bellman::gadgets::boolean::Boolean;
+use bellman::gadgets::multipack;
+// use bellman::gadgets::num::AllocatedNum;
+// use bellman::gadgets::sha256::sha256;
+use bellman::groth16::generate_random_parameters;
 use bellman::groth16::Parameters;
 use bellman::groth16::Proof as Groth16Proof;
 use bellman::SynthesisError;
@@ -12,9 +13,12 @@ use bellman::{Circuit, ConstraintSystem}; //Variable
                                           // use ff::Field;
                                           // use ff::PrimeField;
                                           // use ff::PrimeFieldRepr;
+use bellman::groth16::{create_random_proof, prepare_verifying_key, verify_proof};
+
 use ff::ScalarEngine;
 use pairing::bls12_381::Bls12;
 use pairing::Engine;
+use rand_core::OsRng; //RngCore
 
 use crate::types::{Error, H256, H512};
 use crate::uint64::UInt64;
@@ -56,19 +60,41 @@ const RHO: [usize; 24] = [
     1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44,
 ];
 
+#[derive(Deserialize, Serialize, Clone, Copy, Debug)]
+pub struct PublicInput {
+    pub hash: H256, // Hash
+}
+
+impl PublicInput {
+    pub fn new(hash: H256) -> Self {
+        Self { hash: hash }
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct PrivateInput {
+    pub preimage: H512,
+}
+
+impl PrivateInput {
+    pub fn new(preimage: H512) -> Self {
+        Self { preimage: preimage }
+    }
+}
+
 #[derive(Clone)]
-struct Sha3_256GadgetInput {
+struct Keccak256gadgetInput {
     /// Hash
     hash: H256,
     /// Preimage
     preimage: H512,
 }
 
-pub struct Sha3_256Gadget {
-    input: Option<Sha3_256GadgetInput>,
+pub struct Keccak256gadget {
+    input: Option<Keccak256gadgetInput>,
 }
 
-impl Sha3_256Gadget {
+impl Keccak256gadget {
     /// Used when generating setup parameters
     #[cfg(feature = "std")]
     pub fn default() -> Self {
@@ -77,7 +103,7 @@ impl Sha3_256Gadget {
 
     /// Used when generating a proof
     pub fn new(hash: H256, preimage: H512) -> Self {
-        let input = Sha3_256GadgetInput { hash, preimage };
+        let input = Keccak256gadgetInput { hash, preimage };
         Self { input: Some(input) }
     }
 }
@@ -493,44 +519,98 @@ where
 }
 
 //Circuit & gadget
-impl<E: Engine> Circuit<E> for Sha3_256Gadget {
+impl<E: Engine> Circuit<E> for Keccak256gadget {
     fn synthesize<CS: ConstraintSystem<E>>(self, mut cs: &mut CS) -> Result<(), SynthesisError> {
-        //TODO: Implement
-        let mut rand_value = [0u8; 64];
-
-        //Prepare preimage
-        let mut preimage = Vec::new();
-        for _ in 0..512 {
-            preimage.push(Boolean::Constant(false));
-        }
-        for byte in 0usize..64usize {
-            let byte_input = byte;
-            let byte_output = byte;
-
-            for bit in 0usize..8usize {
-                let byte_bit = bit;
-                let flag = (rand_value[byte_input] & (1u8 << bit)) != 0u8;
-                if flag {
-                    preimage[(byte_output * 8usize) + byte_bit] = Boolean::Constant(true);
-                }
-            }
+        let preimage;
+        if let Some(input_parameters) = self.input.clone() {
+            preimage = (0..512)
+                .map(|i| {
+                    let byte_input = i % 8usize;
+                    let flag = (input_parameters.preimage.to_vec()[byte_input] & (1u8 << i)) != 0u8;
+                    if flag {
+                        AllocatedBit::alloc(
+                            cs.namespace(|| format!("preimage bit {}", i)),
+                            Some(true),
+                        )
+                        .unwrap()
+                        .into()
+                    } else {
+                        AllocatedBit::alloc(
+                            cs.namespace(|| format!("preimage bit {}", i)),
+                            Some(false),
+                        )
+                        .unwrap()
+                        .into()
+                    }
+                })
+                .collect();
+        } else {
+            preimage = (0..512)
+                .map(|i| {
+                    AllocatedBit::alloc(cs.namespace(|| format!("preimage bit {}", i)), None)
+                        .unwrap()
+                        .into()
+                })
+                .collect();
         }
 
         //Call
-        let hash_vector = keccak_256_512(&mut cs, preimage).unwrap();
+        let hash_vector = keccak_256_512(&mut cs, preimage)?;
 
-        //Convert
-        let mut hash = [0u8; 32];
-        for bit in 0..256 {
-            if hash_vector[bit].get_value().unwrap() {
-                let byte_bit = bit % 8usize;
-                let byte_be = bit / 8usize;
-                hash[byte_be] |= 1u8 << byte_bit;
+        //Convert & confirm
+        if let Some(input_parameters) = self.input {
+            let mut hash = [0u8; 32];
+            for bit in 0..256 {
+                if hash_vector[bit].get_value().unwrap() {
+                    let byte_bit = bit % 8usize;
+                    let byte_be = bit / 8usize;
+                    hash[byte_be] |= 1u8 << byte_bit;
+                }
             }
+
+            assert_eq!(input_parameters.hash.to_vec(), hash.to_vec());
         }
 
-        panic!("Not implemented");
+        Ok(())
     }
+}
+
+pub fn generate() -> Result<SetupParams, Error> {
+    generate_random_parameters::<Bls12, _, _>(Keccak256gadget::default(), &mut OsRng)
+        .map_err(|e| Error::Synthesis(e))
+}
+
+pub fn prove(
+    params: &SetupParams,
+    x: PublicInput,
+    w: PrivateInput,
+) -> Result<Proof, Error> {
+    let gadget = Keccak256gadget::new(x.hash, w.preimage);
+
+    let proof = create_random_proof(gadget, params, &mut OsRng).map_err(|e| Error::Synthesis(e))?;
+
+    Ok(proof.try_into()?)
+}
+
+pub fn verify(params: &SetupParams, x: PublicInput, proof: Proof) -> bool {
+    // Prepare the verification key (for proof verification).
+    let pvk = prepare_verifying_key(&params.vk);
+
+    let hash = x.hash; //login_hash(x.global_salt, x.password_hash);
+
+    // Pack the hash as inputs for proof verification.
+    let hash_bits = multipack::bytes_to_bits_le(hash.as_ref());
+    let inputs = multipack::compute_multipacking::<Bls12>(&hash_bits);
+
+    // Check the proof!
+    let proof = proof.try_into();
+    if proof.is_err() {
+        return false;
+    }
+
+    // Won't panic now
+    let result = verify_proof(&pvk, &proof.unwrap(), &inputs);
+    result.is_ok() && result.unwrap() // True if result is Ok() and is set
 }
 
 //Test
@@ -563,11 +643,12 @@ mod test {
     // use tiny_keccak::Sha3;
     use secp256k1::{PublicKey, Secp256k1, SecretKey};
     use tiny_keccak::Hasher;
+    use chrono::*;
 
     #[test]
     fn test_Keccak_256_512_primitive() {
         let mut rng = rand::thread_rng();
-        for _ in 0..16 {
+        for _ in 0..1 {
             let mut keccak = Keccak::v256();
 
             let mut rand_value = [0u8; 64];
@@ -854,7 +935,7 @@ mod test {
     #[test]
     fn test_Keccak_256_512() {
         let mut rng = rand::thread_rng();
-        for _ in 0..16 {
+        for _ in 0..1 {
             let mut keccak = Keccak::v256();
 
             let mut rand_value = [0u8; 64];
@@ -901,5 +982,54 @@ mod test {
 
             assert_eq!(hash, hash_source);
         }
+    }
+
+    #[test]
+    fn test_keccak_proof() {
+        let local_before: DateTime<Local> = Local::now();
+
+        let params = super::generate().unwrap();
+
+        let local_after: DateTime<Local> = Local::now();
+
+        assert_eq!(local_before, local_after);
+
+        let mut keccak = Keccak::v256();
+
+        let mut rand_value = [0u8; 64];
+        let mut rng = rand::thread_rng();
+        rng.fill(&mut rand_value); // array fill
+                                   // rand_value[0] = 1;
+
+        keccak.update(&rand_value);
+
+        let mut hash_source = [0u8; 32];
+        keccak.finalize(&mut hash_source);
+
+        // //Prepare preimage
+        // let mut preimage = Vec::new();
+        // for _ in 0..512 {
+        //     preimage.push(Boolean::Constant(false));
+        // }
+        // for byte in 0usize..64usize {
+        //     let byte_input = byte;
+        //     let byte_output = byte;
+
+        //     for bit in 0usize..8usize {
+        //         let byte_bit = bit;
+        //         let flag = (rand_value[byte_input] & (1u8 << bit)) != 0u8;
+        //         if flag {
+        //             preimage[(byte_output * 8usize) + byte_bit] = Boolean::Constant(true);
+        //         }
+        //     }
+        // }
+
+        let mut cs = TestConstraintSystem::<Bls12>::new();
+
+        let w = super::PrivateInput::new(rand_value.into());
+        let x = super::PublicInput::new(hash_source.into());
+
+        let proof = super::prove(&params, x, w).unwrap();
+        assert!(super::verify(&params, x, proof));
     }
 }

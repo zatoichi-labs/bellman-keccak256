@@ -4,8 +4,8 @@
 
 use bellman::gadgets::boolean::{AllocatedBit, Boolean};
 // use bellman::gadgets::multieq::MultiEq;
-use bellman::{ConstraintSystem, SynthesisError};//LinearCombination
-use ff::{ScalarEngine};//PrimeField,Field
+use bellman::{ConstraintSystem, SynthesisError}; //LinearCombination
+use ff::ScalarEngine; //PrimeField,Field
 use std::fmt;
 
 /// Represents an interpretation of 64 `Boolean` objects as an
@@ -424,117 +424,6 @@ mod test {
             }
 
             num = num.rotate_right(1);
-        }
-    }
-
-    #[test]
-    fn test_uint64_shr() {
-        let mut rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-            0xbc, 0xe5,
-        ]);
-
-        for _ in 0..50 {
-            for i in 0..60 {
-                let num = rng.next_u64();
-                let a = UInt64::constant(num).shr(i);
-                let b = UInt64::constant(num.wrapping_shr(i as u32));
-
-                assert_eq!(a.value.unwrap(), num.wrapping_shr(i as u32));
-
-                assert_eq!(a.bits.len(), b.bits.len());
-                for (a, b) in a.bits.iter().zip(b.bits.iter()) {
-                    assert_eq!(a.get_value().unwrap(), b.get_value().unwrap());
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_uint64_sha256_maj() {
-        let mut rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-            0xbc, 0xe5,
-        ]);
-
-        for _ in 0..1000 {
-            let mut cs = TestConstraintSystem::<Bls12>::new();
-
-            let a = rng.next_u64();
-            let b = rng.next_u64();
-            let c = rng.next_u64();
-
-            let mut expected = (a & b) ^ (a & c) ^ (b & c);
-
-            let a_bit = UInt64::alloc(cs.namespace(|| "a_bit"), Some(a)).unwrap();
-            let b_bit = UInt64::constant(b);
-            let c_bit = UInt64::alloc(cs.namespace(|| "c_bit"), Some(c)).unwrap();
-
-            let r = UInt64::sha256_maj(&mut cs, &a_bit, &b_bit, &c_bit).unwrap();
-
-            assert!(cs.is_satisfied());
-
-            assert!(r.value == Some(expected));
-
-            for b in r.bits.iter() {
-                match b {
-                    &Boolean::Is(ref b) => {
-                        assert!(b.get_value().unwrap() == (expected & 1 == 1));
-                    }
-                    &Boolean::Not(ref b) => {
-                        assert!(!b.get_value().unwrap() == (expected & 1 == 1));
-                    }
-                    &Boolean::Constant(b) => {
-                        assert!(b == (expected & 1 == 1));
-                    }
-                }
-
-                expected >>= 1;
-            }
-        }
-    }
-
-    #[test]
-    fn test_uint64_sha256_ch() {
-        let mut rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-            0xbc, 0xe5,
-        ]);
-
-        for _ in 0..1000 {
-            let mut cs = TestConstraintSystem::<Bls12>::new();
-
-            let a = rng.next_u64();
-            let b = rng.next_u64();
-            let c = rng.next_u64();
-
-            let mut expected = (a & b) ^ ((!a) & c);
-
-            let a_bit = UInt64::alloc(cs.namespace(|| "a_bit"), Some(a)).unwrap();
-            let b_bit = UInt64::constant(b);
-            let c_bit = UInt64::alloc(cs.namespace(|| "c_bit"), Some(c)).unwrap();
-
-            let r = UInt64::sha256_ch(&mut cs, &a_bit, &b_bit, &c_bit).unwrap();
-
-            assert!(cs.is_satisfied());
-
-            assert!(r.value == Some(expected));
-
-            for b in r.bits.iter() {
-                match b {
-                    &Boolean::Is(ref b) => {
-                        assert!(b.get_value().unwrap() == (expected & 1 == 1));
-                    }
-                    &Boolean::Not(ref b) => {
-                        assert!(!b.get_value().unwrap() == (expected & 1 == 1));
-                    }
-                    &Boolean::Constant(b) => {
-                        assert!(b == (expected & 1 == 1));
-                    }
-                }
-
-                expected >>= 1;
-            }
         }
     }
 }

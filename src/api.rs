@@ -16,12 +16,12 @@ use rand_core::{RngCore, SeedableRng};
 #[cfg(not(feature = "std"))]
 use rand_xorshift::XorShiftRng;
 
-use crate::gadget::{Proof, SetupParams, Sha3_256Gadget};
+use crate::gadget::{Keccak256gadget, Proof, SetupParams};
 use crate::types::{Credentials, Error, Login}; //, H256, H512
 
 #[cfg(feature = "std")]
 pub fn generate() -> Result<SetupParams, Error> {
-    generate_random_parameters::<Bls12, _, _>(Sha3_256Gadget::default(), &mut OsRng)
+    generate_random_parameters::<Bls12, _, _>(Keccak256gadget::default(), &mut OsRng)
         .map_err(|e| Error::Synthesis(e))
 }
 
@@ -34,7 +34,7 @@ pub fn prove(
     w: PrivateInputs,
     #[cfg(not(feature = "std"))] seed: Seed, // NOTE: no_std builds need to provide their own rng seed
 ) -> Result<Proof, Error> {
-    let gadget = Sha3_256Gadget::new(x.hash, w.preimage);
+    let gadget = Keccak256gadget::new(x.hash, w.preimage);
 
     #[cfg(not(feature = "std"))]
     let mut rng = XorShiftRng::from_seed(seed);
