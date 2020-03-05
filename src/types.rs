@@ -170,6 +170,12 @@ impl From<[u8; 64]> for H512 {
     }
 }
 
+impl From<&[u8]> for H512 {
+    fn from(array: &[u8]) -> Self {
+        Self::from_slice(array).unwrap()
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone, Copy, Debug)]
 pub struct Login {
     pub hash: H256,

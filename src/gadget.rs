@@ -1,24 +1,18 @@
 use core::convert::{TryFrom, TryInto};
 
 use bellman::gadgets::boolean::{AllocatedBit, Boolean};
-// use bellman::gadgets::boolean::Boolean;
 use bellman::gadgets::multipack;
-// use bellman::gadgets::num::AllocatedNum;
-// use bellman::gadgets::sha256::sha256;
 use bellman::groth16::generate_random_parameters;
 use bellman::groth16::Parameters;
 use bellman::groth16::Proof as Groth16Proof;
-use bellman::SynthesisError;
-use bellman::{Circuit, ConstraintSystem}; //Variable
-                                          // use ff::Field;
-                                          // use ff::PrimeField;
-                                          // use ff::PrimeFieldRepr;
 use bellman::groth16::{create_random_proof, prepare_verifying_key, verify_proof};
+use bellman::SynthesisError;
+use bellman::{Circuit, ConstraintSystem};
 
 use ff::ScalarEngine;
 use pairing::bls12_381::Bls12;
 use pairing::Engine;
-use rand_core::OsRng; //RngCore
+use rand_core::OsRng;
 
 use crate::types::{Error, H256, H512};
 use crate::uint64::UInt64;
@@ -50,12 +44,14 @@ const ROUND_CONSTANTS: [u64; 24] = [
     0x80000001u64,
     0x8000000080008008u64,
 ];
+#[cfg(test)]
 const PI: [usize; 24] = [
     10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4, 15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1,
 ];
 const ROTR: [usize; 25] = [
     0, 1, 62, 28, 27, 36, 44, 6, 55, 20, 3, 10, 43, 25, 39, 41, 45, 15, 21, 8, 18, 2, 61, 56, 14,
 ];
+#[cfg(test)]
 const RHO: [usize; 24] = [
     1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44,
 ];
@@ -308,16 +304,6 @@ where
     a.xor(cs.namespace(|| "xor_2"), b)
 }
 
-fn xor_3<E, CS>(mut cs: CS, a: &UInt64, b: &UInt64, c: &UInt64) -> Result<UInt64, SynthesisError>
-where
-    E: ScalarEngine,
-    CS: ConstraintSystem<E>,
-{
-    // a ^ b ^ c
-    let ab = a.xor(cs.namespace(|| "xor_3 first"), b)?;
-    ab.xor(cs.namespace(|| "xor_3 second"), c)
-}
-
 fn xor_5<E, CS>(
     mut cs: CS,
     a: &UInt64,
@@ -525,8 +511,10 @@ impl<E: Engine> Circuit<E> for Keccak256gadget {
         if let Some(input_parameters) = self.input.clone() {
             preimage = (0..512)
                 .map(|i| {
-                    let byte_input = i % 8usize;
-                    let flag = (input_parameters.preimage.to_vec()[byte_input] & (1u8 << i)) != 0u8;
+                    let byte_input = i / 8usize;
+                    let bit = i % 8usize;
+                    let flag =
+                        (input_parameters.preimage.to_vec()[byte_input] & (1u8 << bit)) != 0u8;
                     if flag {
                         AllocatedBit::alloc(
                             cs.namespace(|| format!("preimage bit {}", i)),
@@ -558,20 +546,44 @@ impl<E: Engine> Circuit<E> for Keccak256gadget {
         let hash_vector = keccak_256_512(&mut cs, preimage)?;
 
         //Convert & confirm
-        if let Some(input_parameters) = self.input {
-            let mut hash = [0u8; 32];
-            for bit in 0..256 {
-                if hash_vector[bit].get_value().unwrap() {
-                    let byte_bit = bit % 8usize;
-                    let byte_be = bit / 8usize;
-                    hash[byte_be] |= 1u8 << byte_bit;
-                }
-            }
+        // if let Some(input_parameters) = self.input {
+        //     let mut hash = [0u8; 32];
+        //     for bit in 0..256 {
+        //         if hash_vector[bit].get_value().unwrap() {
+        //             let byte_bit = bit % 8usize;
+        //             let byte_be = bit / 8usize;
+        //             hash[byte_be] |= 1u8 << byte_bit;
+        //         }
+        //     }
 
-            assert_eq!(input_parameters.hash.to_vec(), hash.to_vec());
+        //     assert_eq!(input_parameters.hash.to_vec(), hash.to_vec());
+        // }
+        if let Some(input_parameters) = self.input {
+            let commitment_map: Vec<bool> = input_parameters
+                .hash
+                .iter()
+                .map(|byte| {
+                    (0..8).map(move |i| {
+                        if (byte >> i) & 1u8 == 1u8 {
+                            true
+                        } else {
+                            false
+                        }
+                    })
+                })
+                .flatten()
+                .collect();
+
+            let hash_clone = hash_vector.clone();
+            for (i, b) in hash_clone.into_iter().enumerate() {
+                assert_eq!(commitment_map[i], b.get_value().unwrap());
+            }
+        } else {
+            //Do nothing
         }
 
-        Ok(())
+        // Expose the vector of 32 boolean variables as compact public inputs.
+        multipack::pack_into_inputs(cs.namespace(|| "pack hash"), &hash_vector)
     }
 }
 
@@ -580,11 +592,7 @@ pub fn generate() -> Result<SetupParams, Error> {
         .map_err(|e| Error::Synthesis(e))
 }
 
-pub fn prove(
-    params: &SetupParams,
-    x: PublicInput,
-    w: PrivateInput,
-) -> Result<Proof, Error> {
+pub fn prove(params: &SetupParams, x: PublicInput, w: PrivateInput) -> Result<Proof, Error> {
     let gadget = Keccak256gadget::new(x.hash, w.preimage);
 
     let proof = create_random_proof(gadget, params, &mut OsRng).map_err(|e| Error::Synthesis(e))?;
@@ -616,35 +624,18 @@ pub fn verify(params: &SetupParams, x: PublicInput, proof: Proof) -> bool {
 //Test
 #[cfg(test)]
 mod test {
-    use crate::types::H256; //Error, Secp256k1Point
-                            // use ff::{BitIterator, Field, PrimeField};
-                            // use pairing::bls12_381::{Bls12, Fr};
-                            // use rand_core::SeedableRng;
-                            // use rand_xorshift::XorShiftRng;
-    use rand::{thread_rng, Rng}; //thread_rng
+    use rand::Rng;
 
-    // use super::{AllocatedNum, Boolean};
-    use bellman::{Circuit, ConstraintSystem}; //Variable
-                                              // use crate::gadgets::test::*;
-                                              // use hex::ToHex;
-    use num_bigint::{BigInt, BigUint};
-    use num_traits::{One, Zero};
-    use std::str::FromStr;
-    // use secp256k1::curve::Affine;
-    // use secp256k1::curve::Field;
-    use ff::PrimeField;
-    use pairing::bls12_381::Bls12;
-    use pairing::Engine;
-    // use ff::PrimeFieldRepr;
-    use bellman::gadgets::boolean::Boolean; //AllocatedBit
+    use bellman::gadgets::boolean::Boolean;
     use bellman::gadgets::test::*;
-    use ff::ScalarEngine; //BitIterator, Field
+    use pairing::bls12_381::Bls12;
+    use std::str::FromStr;
     use tiny_keccak::Keccak;
-    // use tiny_keccak::Sha3;
     use secp256k1::{PublicKey, Secp256k1, SecretKey};
+    use std::{fs::OpenOptions, io::prelude::*};
     use tiny_keccak::Hasher;
-    use chrono::*;
 
+    #[ignore]
     #[test]
     fn test_Keccak_256_512_primitive() {
         let mut rng = rand::thread_rng();
@@ -694,6 +685,7 @@ mod test {
         }
     }
 
+    #[ignore]
     #[test]
     fn test_ethereum_addresses_primitive() {
         // mnemonic:	"into trim cross then helmet popular suit hammer cart shrug oval student"
@@ -984,52 +976,217 @@ mod test {
         }
     }
 
+    #[ignore]
     #[test]
-    fn test_keccak_proof() {
-        let local_before: DateTime<Local> = Local::now();
+    fn test_keccak_generate_and_save() {
+        let params_file = "params.keys";
+
+        let mut params_file = OpenOptions::new()
+            .write(true) // Write only
+            .create(true) // Create file if it doesn't exist
+            .truncate(true) // Delete previous key
+            .open(params_file)
+            .unwrap();
 
         let params = super::generate().unwrap();
 
-        let local_after: DateTime<Local> = Local::now();
+        let mut v = vec![];
+        params.write(&mut v).unwrap();
+        params_file.write_all(&v).unwrap();
+    }
 
-        assert_eq!(local_before, local_after);
+    #[test]
+    fn test_keccak_proof() {
+        let params_file = "params.keys";
+
+        let mut params_file = OpenOptions::new().read(true).open(params_file).unwrap();
+        let params = super::SetupParams::read(&mut params_file, false)
+            .expect("couldn't deserialize keccak parameters file");
 
         let mut keccak = Keccak::v256();
 
         let mut rand_value = [0u8; 64];
         let mut rng = rand::thread_rng();
         rng.fill(&mut rand_value); // array fill
-                                   // rand_value[0] = 1;
 
         keccak.update(&rand_value);
 
         let mut hash_source = [0u8; 32];
         keccak.finalize(&mut hash_source);
 
-        // //Prepare preimage
-        // let mut preimage = Vec::new();
-        // for _ in 0..512 {
-        //     preimage.push(Boolean::Constant(false));
-        // }
-        // for byte in 0usize..64usize {
-        //     let byte_input = byte;
-        //     let byte_output = byte;
-
-        //     for bit in 0usize..8usize {
-        //         let byte_bit = bit;
-        //         let flag = (rand_value[byte_input] & (1u8 << bit)) != 0u8;
-        //         if flag {
-        //             preimage[(byte_output * 8usize) + byte_bit] = Boolean::Constant(true);
-        //         }
-        //     }
-        // }
-
-        let mut cs = TestConstraintSystem::<Bls12>::new();
-
         let w = super::PrivateInput::new(rand_value.into());
         let x = super::PublicInput::new(hash_source.into());
 
         let proof = super::prove(&params, x, w).unwrap();
         assert!(super::verify(&params, x, proof));
+    }
+
+    #[test]
+    fn test_ethereum_addresses() {
+        // mnemonic:	"into trim cross then helmet popular suit hammer cart shrug oval student"
+        // seed:		ca5a4407934514911183f0c4ffd71674ab28028c060c15d270977ba57c390771967ab84ed473702fef5eb36add05ea590d99ddff14c730e93ad14b418a2788b8
+        // private key:	d6840b79c2eb1f5ff97a41590df3e04d7d4b0965073ff2a9fbb7ff003799dc71
+        // address:	0x604a95C9165Bc95aE016a5299dd7d400dDDBEa9A
+        // mnemonic:	"finish oppose decorate face calm tragic certain desk hour urge dinosaur mango"
+        // seed:		7d34eb533ad9fea340cd93d82b8baead0c00a81380caa682aca06631fe851a63093db5cb5c81b3009a0281b2c34959750bbb5dfaab219d17f04f1a1b37b93400
+        // private key:	d3cc16948a02a91b9fcf83735653bf3dfd82c86543fdd1e9a828bd25e8a7b68d
+        // address:	0x1c96099350f13D558464eC79B9bE4445AA0eF579
+
+        let params_file = "params.keys";
+
+        let mut params_file = OpenOptions::new().read(true).open(params_file).unwrap();
+        let params = super::SetupParams::read(&mut params_file, false)
+            .expect("couldn't deserialize keccak parameters file");
+
+        let secp = Secp256k1::new();
+        {
+            let s = SecretKey::from_str(
+                "0000000000000000000000000000000000000000000000000000000000000001",
+            )
+            .unwrap();
+            let public_key: PublicKey = PublicKey::from_secret_key(&secp, &s);
+
+            let public_key_serial = public_key.serialize_uncompressed();
+
+            let public_key_serial_type = &public_key_serial[0..1];
+            // let public_key_serial_x = &public_key_serial[1..33];
+            // let public_key_serial_y = &public_key_serial[33..65];
+
+            assert_eq!(public_key_serial_type[0], 4u8); //Long, y is signed
+
+            let preimage = (&public_key_serial[1..]).clone();
+            assert_eq!(preimage.len(), 64);
+
+            let mut hash = [0u8; 32];
+            {
+                let mut keccak = Keccak::v256();
+
+                keccak.update(&preimage);
+
+                keccak.finalize(&mut hash);
+
+                let address = (&hash[12..32]).clone();
+
+                let address_hex = hex::encode(address);
+                assert_eq!(address_hex, "7e5f4552091a69125d5dfcb7b8c2659029395bdf");
+            }
+
+            let w = super::PrivateInput::new(preimage.into());
+            let x = super::PublicInput::new(hash.into());
+
+            let proof = super::prove(&params, x, w).unwrap();
+            assert!(super::verify(&params, x, proof));
+
+            let address = (&hash[12..32]).clone();
+
+            let address_hex = hex::encode(address);
+            assert_eq!(address_hex, "7e5f4552091a69125d5dfcb7b8c2659029395bdf");
+        }
+
+        {
+            let s = SecretKey::from_str(
+                "d6840b79c2eb1f5ff97a41590df3e04d7d4b0965073ff2a9fbb7ff003799dc71",
+            )
+            .unwrap();
+            let public_key: PublicKey = PublicKey::from_secret_key(&secp, &s);
+
+            let public_key_serial = public_key.serialize_uncompressed();
+
+            let public_key_serial_type = &public_key_serial[0..1];
+            // let public_key_serial_x = &public_key_serial[1..33];
+            // let public_key_serial_y = &public_key_serial[33..65];
+
+            assert_eq!(public_key_serial_type[0], 4u8); //Long, y is signed
+
+            let preimage = (&public_key_serial[1..]).clone();
+            assert_eq!(preimage.len(), 64);
+
+            let mut hash = [0u8; 32];
+            {
+                let mut keccak = Keccak::v256();
+
+                keccak.update(&preimage);
+
+                keccak.finalize(&mut hash);
+
+                let address = (&hash[12..32]).clone();
+
+                let address_hex = hex::encode(address);
+
+                let address_check =
+                    hex::decode("604a95C9165Bc95aE016a5299dd7d400dDDBEa9A").unwrap();
+                let address_check_hex = hex::encode(address_check);
+
+                assert_eq!(address_hex, address_check_hex);
+            }
+
+            let w = super::PrivateInput::new(preimage.into());
+            let x = super::PublicInput::new(hash.into());
+
+            let proof = super::prove(&params, x, w).unwrap();
+            assert!(super::verify(&params, x, proof));
+
+            let address = (&hash[12..32]).clone();
+
+            let address_hex = hex::encode(address);
+
+            let address_check = hex::decode("604a95C9165Bc95aE016a5299dd7d400dDDBEa9A").unwrap();
+            let address_check_hex = hex::encode(address_check);
+
+            assert_eq!(address_hex, address_check_hex);
+        }
+
+        {
+            let s = SecretKey::from_str(
+                "d3cc16948a02a91b9fcf83735653bf3dfd82c86543fdd1e9a828bd25e8a7b68d",
+            )
+            .unwrap();
+            let public_key: PublicKey = PublicKey::from_secret_key(&secp, &s);
+
+            let public_key_serial = public_key.serialize_uncompressed();
+
+            let public_key_serial_type = &public_key_serial[0..1];
+            // let public_key_serial_x = &public_key_serial[1..33];
+            // let public_key_serial_y = &public_key_serial[33..65];
+
+            assert_eq!(public_key_serial_type[0], 4u8); //Long, y is signed
+
+            let preimage = (&public_key_serial[1..]).clone();
+            assert_eq!(preimage.len(), 64);
+
+            let mut hash = [0u8; 32];
+            {
+                let mut keccak = Keccak::v256();
+
+                keccak.update(&preimage);
+
+                keccak.finalize(&mut hash);
+
+                let address = (&hash[12..32]).clone();
+
+                let address_hex = hex::encode(address);
+
+                let address_check =
+                    hex::decode("1c96099350f13D558464eC79B9bE4445AA0eF579").unwrap();
+                let address_check_hex = hex::encode(address_check);
+
+                assert_eq!(address_hex, address_check_hex);
+            }
+
+            let w = super::PrivateInput::new(preimage.into());
+            let x = super::PublicInput::new(hash.into());
+
+            let proof = super::prove(&params, x, w).unwrap();
+            assert!(super::verify(&params, x, proof));
+
+            let address = (&hash[12..32]).clone();
+
+            let address_hex = hex::encode(address);
+
+            let address_check = hex::decode("1c96099350f13D558464eC79B9bE4445AA0eF579").unwrap();
+            let address_check_hex = hex::encode(address_check);
+
+            assert_eq!(address_hex, address_check_hex);
+        }
     }
 }
