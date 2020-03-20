@@ -86,6 +86,7 @@ struct Keccak256gadgetInput {
     preimage: H512,
 }
 
+#[derive(Default)]
 pub struct Keccak256gadget {
     input: Option<Keccak256gadgetInput>,
 }
