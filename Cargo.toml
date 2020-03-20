@@ -4,10 +4,6 @@ version = "0.1.0"
 authors = ["Zatoichi Labs <admin@zatoichi-labs.com>"]
 edition = "2018"
 
-[lib]
-name = "keccak_gadget"
-crate-type = ["cdylib", "rlib"]
-
 [features]
 default = ["std"]
 std = ["bellman/default"]
