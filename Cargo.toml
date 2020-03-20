@@ -5,23 +5,19 @@ authors = ["Zatoichi Labs <admin@zatoichi-labs.com>"]
 edition = "2018"
 
 [lib]
-name = "keccakgadget"
+name = "keccak_gadget"
 crate-type = ["cdylib", "rlib"]
 
 [features]
 default = ["std"]
 std = ["bellman/default"]
 no-std = ["rand_xorshift"]
-python = ["std", "pyo3"]
-build-binary = ["std", "clap"]
 
 [dependencies]
 ff = "0.5.2"
-hex = "0.4.0"
-group = "0.2.0"
 pairing = "0.15.1"
 rand_core = "0.5"
-tiny-keccak = { version = "*", features = ["keccak","sha3"] }
+tiny-keccak = { version = "2.0", features = ["keccak","sha3"] }
 serde = "1.0.104"
 serde_derive = "1.0.104"
 
@@ -30,15 +26,6 @@ default-features = false
 features = ["groth16"]
 version ="0.2.0"
 
-[dependencies.clap]
-optional = true
-version = "2.33.0"
-
-[dependencies.pyo3]
-optional = true
-version = "0.8.3"
-features = ["extension-module"]
-
 # NOTE: Used to get an RNG in no-std
 [dependencies.rand_xorshift]
 optional = true
@@ -46,11 +33,7 @@ version ="0.2.0"
 
 [dev-dependencies]
 serde_json = "*"
-sha2 = "*"
-num-bigint = "*"
-num-traits = "*"
 rand = "*"
 hex = "*"
 secp256k1 = "*"
 rand_xorshift = "*"
-chrono = "*"
