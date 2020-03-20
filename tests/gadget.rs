@@ -11,6 +11,158 @@ use tiny_keccak::Hasher;
 
 use keccak_gadget;
 
+const PI: [usize; 24] = [
+    10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4, 15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1,
+];
+
+const RHO: [usize; 24] = [
+    1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44,
+];
+
+fn keccak_f_1600_primitive(input: Vec<bool>) -> Vec<bool> {
+    let mut A = input;
+
+    for i in 0..24 {
+        A = round_1600_primitive(&A, keccak_gadget::ROUND_CONSTANTS[i]);
+    }
+
+    return A;
+}
+
+fn xor_2_primitive(a: &bool, b: &bool) -> bool {
+    a ^ b
+}
+
+fn xor_3_primitive(a: &bool, b: &bool, c: &bool) -> bool {
+    a ^ b ^ c
+}
+
+fn xor_5_primitive(a: &bool, b: &bool, c: &bool, d: &bool, e: &bool) -> bool {
+    a ^ b ^ c ^ d ^ e
+}
+
+fn xor_not_and_primitive(a: &bool, b: &bool, c: &bool) -> bool {
+    a ^ ((!b) & c)
+}
+
+fn round_1600_primitive(A: &Vec<bool>, RC: u64) -> Vec<bool> {
+    assert_eq!(A.len(), 1600); //64*25
+
+    // # θ step
+    // C[x] = A[x,0] xor A[x,1] xor A[x,2] xor A[x,3] xor A[x,4],   for x in 0…4
+    let mut C = vec![false; 320];
+    for x in 0..5 {
+        for bit in 0..64 {
+            C[(x * 64usize) + bit] = xor_5_primitive(
+                &A[(x * 64usize) + bit + (0usize * 320usize)],
+                &A[(x * 64usize) + bit + (1usize * 320usize)],
+                &A[(x * 64usize) + bit + (2usize * 320usize)],
+                &A[(x * 64usize) + bit + (3usize * 320usize)],
+                &A[(x * 64usize) + bit + (4usize * 320usize)],
+            );
+        }
+    }
+    // D[x] = C[x-1] xor rot(C[x+1],1),                             for x in 0…4
+    // A[x,y] = A[x,y] xor D[x],                           for (x,y) in (0…4,0…4)
+    let mut A_new1 = vec![false; 1600];
+    for x in 0..5 {
+        for y in 0..5 {
+            for bit in 0..64 {
+                // A_new1[(y * 320usize) + (x * 64usize) + bit] = A[(y * 320usize) + (x * 64usize) + bit] ^ D[(x * 64usize) + bit];
+                A_new1[(y * 320usize) + (x * 64usize) + bit] = xor_3_primitive(
+                    &A[(y * 320usize) + (x * 64usize) + bit],
+                    &C[(((x + 4usize) % 5usize) * 64usize) + bit],
+                    &C[(((x + 1usize) % 5usize) * 64usize) + ((bit + 1usize) % 64)],
+                );
+            }
+        }
+    }
+
+    // # ρ and π steps
+    // B[y,2*x+3*y] = rot(A[x,y], r[x,y]),                 for (x,y) in (0…4,0…4)
+    let mut B = vec![false; 1600];
+    for bit in 0..64 {
+        //Since PI[] doesn't contain 0
+        B[bit] = A_new1[bit];
+    }
+    let mut last = 1usize;
+    for i in 0..24 {
+        for bit in 0..64 {
+            B[(PI[i] * 64usize) + bit] = A_new1[(last * 64usize) + ((bit + RHO[i]) % 64usize)];
+        }
+        last = PI[i];
+    }
+
+    // # χ step
+    // A[x,y] = B[x,y] xor ((not B[x+1,y]) and B[x+2,y]),  for (x,y) in (0…4,0…4)
+    let mut A_new2 = vec![false; 1600];
+    for x in 0..5 {
+        for y in 0..5 {
+            for bit in 0..64 {
+                A_new2[(y * 320usize) + (x * 64usize) + bit] = xor_not_and_primitive(
+                    &B[(y * 320usize) + (x * 64usize) + bit],
+                    &B[(y * 320usize) + (((x + 1usize) % 5usize) * 64usize) + bit],
+                    &B[(y * 320usize) + (((x + 2usize) % 5usize) * 64usize) + bit],
+                );
+            }
+        }
+    }
+
+    // # ι step
+    let mut RC_bits = vec![false; 64];
+    for bit in 0..64 {
+        let val = 1u64 << (63usize - bit);
+        // let val = 1u64 << bit;
+        if RC & val != 0u64 {
+            RC_bits[bit] = true;
+        }
+    }
+    // A[0,0] = A[0,0] xor RC
+    for bit in 0..64 {
+        A_new2[bit] = xor_2_primitive(&A_new2[bit], &RC_bits[bit]);
+    }
+
+    return A_new2;
+}
+
+fn keccak_256_512_primitive(mbytes: &Vec<bool>) -> Vec<bool> {
+    assert_eq!(mbytes.len(), 512);
+
+    // # Padding
+    // d = 2^|Mbits| + sum for i=0..|Mbits|-1 of 2^i*Mbits[i]
+    // P = Mbytes || d || 0x00 || … || 0x00
+    // P = P xor (0x00 || … || 0x00 || 0x80)
+    //0x0100 ... 0080
+    let mut p_append = vec![false; 1088]; //1600-512
+    p_append[63] = true;
+    p_append[1024 - 512] = true;
+
+    // # Initialization
+    // S[x,y] = 0,                               for (x,y) in (0…4,0…4)
+    let mut s = mbytes.clone();
+    s.append(&mut p_append);
+
+    // # Absorbing phase
+    // for each block Pi in P
+    //   S[x,y] = S[x,y] xor Pi[x+5*y],          for (x,y) such that x+5*y < r/w
+    //   S = Keccak-f[r+c](S)
+
+    s = keccak_f_1600_primitive(s);
+
+    // # Squeezing phase
+    // Z = empty string
+    let mut z = vec![false; 256];
+
+    // while output is requested
+    //   Z = Z || S[x,y],                        for (x,y) such that x+5*y < r/w
+    //   S = Keccak-f[r+c](S)
+    for bit in 0..256 {
+        z[bit] = s[bit];
+    }
+
+    return z;
+}
+
 #[ignore]
 #[test]
 fn test_Keccak_256_512_primitive() {
@@ -42,7 +194,7 @@ fn test_Keccak_256_512_primitive() {
         }
 
         //Call
-        let hash_vector = keccak_gadget::keccak_256_512_primitive(&preimage);
+        let hash_vector = keccak_256_512_primitive(&preimage);
 
         //Convert from little-endian
         let mut hash = [0u8; 32];
@@ -122,7 +274,7 @@ fn test_ethereum_addresses_primitive() {
         }
 
         //Call
-        let hash_vector = keccak_gadget::keccak_256_512_primitive(&preimage_bits);
+        let hash_vector = keccak_256_512_primitive(&preimage_bits);
 
         //Convert from little-endian
         let mut hash = [0u8; 32];
@@ -196,7 +348,7 @@ fn test_ethereum_addresses_primitive() {
         }
 
         //Call
-        let hash_vector = keccak_gadget::keccak_256_512_primitive(&preimage_bits);
+        let hash_vector = keccak_256_512_primitive(&preimage_bits);
 
         //Convert from little-endian
         let mut hash = [0u8; 32];
@@ -274,7 +426,7 @@ fn test_ethereum_addresses_primitive() {
         }
 
         //Call
-        let hash_vector = keccak_gadget::keccak_256_512_primitive(&preimage_bits);
+        let hash_vector = keccak_256_512_primitive(&preimage_bits);
 
         //Convert from little-endian
         let mut hash = [0u8; 32];
