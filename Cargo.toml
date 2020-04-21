@@ -1,35 +1,20 @@
 [package]
-name = "keccak-gadget"
+name = "bellman-keccak256"
 version = "0.1.0"
 authors = ["Zatoichi Labs <admin@zatoichi-labs.com>"]
 edition = "2018"
 
-[features]
-default = ["std"]
-std = ["bellman/default"]
-no-std = ["rand_xorshift"]
-
 [dependencies]
 ff = "0.5.2"
-pairing = "0.15.1"
-rand_core = "0.5"
-tiny-keccak = { version = "2.0", features = ["keccak","sha3"] }
-serde = "1.0.104"
-serde_derive = "1.0.104"
 
 [dependencies.bellman]
 default-features = false
-features = ["groth16"]
-version ="0.2.0"
-
-# NOTE: Used to get an RNG in no-std
-[dependencies.rand_xorshift]
-optional = true
 version ="0.2.0"
 
 [dev-dependencies]
-serde_json = "*"
-rand = "*"
-hex = "*"
-secp256k1 = "*"
-rand_xorshift = "*"
+bitvec = "0.17.4"
+libsecp256k1 = "0.3.5"
+pairing = "0.15.0"
+proptest = "0.9.6"
+tiny-keccak = { version = "2.0", features = ["keccak","sha3"] }
+hex = "0.4.0"

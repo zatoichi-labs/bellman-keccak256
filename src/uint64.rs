@@ -6,7 +6,7 @@ use bellman::gadgets::boolean::{AllocatedBit, Boolean};
 // use bellman::gadgets::multieq::MultiEq;
 use bellman::{ConstraintSystem, SynthesisError}; //LinearCombination
 use ff::ScalarEngine; //PrimeField,Field
-use std::fmt;
+use core::fmt;
 
 /// Represents an interpretation of 64 `Boolean` objects as an
 /// unsigned integer.
@@ -40,6 +40,7 @@ impl UInt64 {
     }
 
     /// Allocate a `UInt64` in the constraint system
+    #[allow(dead_code)] // TODO Remove when upstreamed to Bellman
     pub fn alloc<E, CS>(mut cs: CS, value: Option<u64>) -> Result<Self, SynthesisError>
     where
         E: ScalarEngine,
@@ -73,12 +74,14 @@ impl UInt64 {
         Ok(UInt64 { bits, value })
     }
 
+    #[allow(dead_code)] // TODO Remove when upstreamed to Bellman
     pub fn into_bits_be(self) -> Vec<Boolean> {
         let mut ret = self.bits;
         ret.reverse();
         ret
     }
 
+    #[allow(dead_code)] // TODO Remove when upstreamed to Bellman
     pub fn from_bits_be(bits: &[Boolean]) -> Self {
         assert_eq!(bits.len(), 64);
 
@@ -148,6 +151,7 @@ impl UInt64 {
         }
     }
 
+    #[allow(dead_code)] // TODO Remove when upstreamed to Bellman
     pub fn rotr(&self, by: usize) -> Self {
         let by = by % 64;
 
@@ -259,7 +263,7 @@ impl fmt::Display for UInt64 {
     }
 }
 
-impl std::fmt::Debug for UInt64 {
+impl fmt::Debug for UInt64 {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         let tmp = format!("{:#x}", self.value.unwrap());
 
@@ -270,103 +274,48 @@ impl std::fmt::Debug for UInt64 {
 #[cfg(test)]
 mod test {
     use super::UInt64;
+
     use bellman::gadgets::boolean::Boolean;
-    use bellman::gadgets::multieq::MultiEq;
     use bellman::gadgets::test::*;
     use bellman::ConstraintSystem;
-    use ff::Field;
     use pairing::bls12_381::Bls12;
-    use rand_core::{RngCore, SeedableRng};
-    use rand_xorshift::XorShiftRng;
 
-    #[test]
-    fn test_uint64_from_bits_be() {
-        let mut rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-            0xbc, 0xe5,
-        ]);
+    use std::convert::TryInto;
+    use bitvec::prelude::*;
+    use proptest::prelude::*;
 
-        for _ in 0..1000 {
-            let v = (0..64)
-                .map(|_| Boolean::constant(rng.next_u64() % 2 != 0))
-                .collect::<Vec<_>>();
+    proptest! {
 
-            let b = UInt64::from_bits_be(&v);
-
-            for (i, bit) in b.bits.iter().enumerate() {
-                match *bit {
-                    Boolean::Constant(bit) => {
-                        assert!(bit == ((b.value.unwrap() >> i) & 1 == 1));
-                    }
-                    _ => unreachable!(),
-                }
-            }
-
-            let expected_to_be_same = b.into_bits_be();
-
-            for x in v.iter().zip(expected_to_be_same.iter()) {
-                match x {
-                    (&Boolean::Constant(true), &Boolean::Constant(true)) => {}
-                    (&Boolean::Constant(false), &Boolean::Constant(false)) => {}
-                    _ => unreachable!(),
-                }
-            }
+        #[test]
+        fn test_uint64_from_constant(a: u64) {
+            let b = UInt64::constant(a);
+            assert_eq!(a, b.value.unwrap());
         }
-    }
 
-    #[test]
-    fn test_uint64_from_bits() {
-        let mut rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-            0xbc, 0xe5,
-        ]);
-
-        for _ in 0..1000 {
-            let v = (0..64)
-                .map(|_| Boolean::constant(rng.next_u64() % 2 != 0))
-                .collect::<Vec<_>>();
-
-            let b = UInt64::from_bits(&v);
-
-            for (i, bit) in b.bits.iter().enumerate() {
-                match *bit {
-                    Boolean::Constant(bit) => {
-                        assert!(bit == ((b.value.unwrap() >> i) & 1 == 1));
-                    }
-                    _ => unreachable!(),
-                }
-            }
-
-            let expected_to_be_same = b.into_bits();
-
-            for x in v.iter().zip(expected_to_be_same.iter()) {
-                match x {
-                    (&Boolean::Constant(true), &Boolean::Constant(true)) => {}
-                    (&Boolean::Constant(false), &Boolean::Constant(false)) => {}
-                    _ => unreachable!(),
-                }
-            }
+        #[test]
+        fn test_uint64_from_bits_be(a: u64) {
+            let a_bv = BitVec::<Msb0, u64>::from_element(a);
+            let a_bits: Vec<Boolean> = a_bv.iter().map(|b| Boolean::constant(*b)).collect();
+            let b = UInt64::from_bits_be(&a_bits);
+            assert_eq!(a, b.value.unwrap());
         }
-    }
 
-    #[test]
-    fn test_uint64_xor() {
-        let mut rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-            0xbc, 0xe5,
-        ]);
+        #[test]
+        fn test_uint64_from_bits(a: u64) {
+            let a_bv = BitVec::<Lsb0, u64>::from_element(a);
+            let a_bits: Vec<Boolean> = a_bv.iter().map(|b| Boolean::constant(*b)).collect();
+            let b = UInt64::from_bits(&a_bits);
+            assert_eq!(a, b.value.unwrap());
+        }
 
-        for _ in 0..1000 {
+        #[test]
+        fn test_uint64_xor(a: u64, b: u64, c: u64) {
             let mut cs = TestConstraintSystem::<Bls12>::new();
 
-            let a = rng.next_u64();
-            let b = rng.next_u64();
-            let c = rng.next_u64();
-
-            let mut expected = a ^ b ^ c;
+            let expected = a ^ b ^ c;
 
             let a_bit = UInt64::alloc(cs.namespace(|| "a_bit"), Some(a)).unwrap();
-            let b_bit = UInt64::constant(b);
+            let b_bit = UInt64::constant(b); // Just to mix things up
             let c_bit = UInt64::alloc(cs.namespace(|| "c_bit"), Some(c)).unwrap();
 
             let r = a_bit.xor(cs.namespace(|| "first xor"), &b_bit).unwrap();
@@ -374,56 +323,18 @@ mod test {
 
             assert!(cs.is_satisfied());
 
-            assert!(r.value == Some(expected));
+            assert_eq!(r.value.unwrap(), expected);
+        }
 
-            for b in r.bits.iter() {
-                match *b {
-                    Boolean::Is(ref b) => {
-                        assert!(b.get_value().unwrap() == (expected & 1 == 1));
-                    }
-                    Boolean::Not(ref b) => {
-                        assert!(!b.get_value().unwrap() == (expected & 1 == 1));
-                    }
-                    Boolean::Constant(b) => {
-                        assert!(b == (expected & 1 == 1));
-                    }
-                }
+        #[test]
+        fn test_uint64_rotr(a: u64) {
+            let num = UInt64::constant(a);
 
-                expected >>= 1;
+            for i in 0..64 {
+                let b = num.rotr(i);
+                assert_eq!(b.value.unwrap(), a.rotate_right(i.try_into().unwrap()));
             }
         }
-    }
 
-    #[test]
-    fn test_uint64_rotr() {
-        let mut rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-            0xbc, 0xe5,
-        ]);
-
-        let mut num = rng.next_u64();
-
-        let a = UInt64::constant(num);
-
-        for i in 0..64 {
-            let b = a.rotr(i);
-            assert_eq!(a.bits.len(), b.bits.len());
-
-            assert!(b.value.unwrap() == num);
-
-            let mut tmp = num;
-            for b in &b.bits {
-                match *b {
-                    Boolean::Constant(b) => {
-                        assert_eq!(b, tmp & 1 == 1);
-                    }
-                    _ => unreachable!(),
-                }
-
-                tmp >>= 1;
-            }
-
-            num = num.rotate_right(1);
-        }
     }
 }
