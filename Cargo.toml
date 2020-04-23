@@ -3,6 +3,9 @@ name = "bellman-keccak256"
 version = "0.1.0"
 authors = ["Zatoichi Labs <admin@zatoichi-labs.com>"]
 edition = "2018"
+description = "Implementation of SHA3 Hash 256/keccak-f variant for Ethereum hashing"
+license = "Apache-2.0"
+repository = "https://github.com/zatoichi-labs/bellman-keccak256"
 
 [dependencies]
 ff = "0.5.2"
